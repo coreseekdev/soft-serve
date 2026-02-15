@@ -38,9 +38,8 @@ func TestNewStore(t *testing.T) {
 	}
 
 	fs := store.(*FileStore)
-	expectedReposPath := filepath.Join(tmpDir, "repos")
-	if fs.reposPath != expectedReposPath {
-		t.Errorf("reposPath = %q, want %q", fs.reposPath, expectedReposPath)
+	if fs.reposPath != tmpDir {
+		t.Errorf("reposPath = %q, want %q", fs.reposPath, tmpDir)
 	}
 
 	expectedUsersPath := filepath.Join(tmpDir, "users")

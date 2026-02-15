@@ -55,6 +55,11 @@ func (s *FileStore) discoverRepos() error {
 		name := entry.Name()
 		fullPath := filepath.Join(s.reposPath, name)
 
+		// Skip special directories
+		if name == "users" || name == "lfs" || name == "ssh" || name == "log" || name == "repos" {
+			continue
+		}
+
 		// Skip hidden directories
 		if strings.HasPrefix(name, ".") {
 			continue

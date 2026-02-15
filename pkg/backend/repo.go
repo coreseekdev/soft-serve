@@ -634,7 +634,12 @@ func (d *Backend) SetProjectName(ctx context.Context, repo string, name string) 
 func (d *Backend) repoPath(name string) string {
 	name = utils.SanitizeRepo(name)
 	rn := strings.ReplaceAll(name, "/", string(os.PathSeparator))
-	return filepath.Join(filepath.Join(d.cfg.DataPath, "repos"), rn+".git")
+	if d.reposPath == "" {
+		// Filestore mode: repos directly in DataPath
+		return filepath.Join(d.cfg.DataPath, rn+".git")
+	}
+	// Dbstore mode: repos in DataPath/repos/
+	return filepath.Join(d.cfg.DataPath, d.reposPath, rn+".git")
 }
 
 var _ proto.Repository = (*repo)(nil)

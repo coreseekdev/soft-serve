@@ -19,28 +19,24 @@ func TestRepoDiscovery(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Create repos directory
-	reposDir := filepath.Join(tmpDir, "repos")
-	os.MkdirAll(reposDir, 0755)
-
-	// Create bare repo
-	bareRepo := filepath.Join(reposDir, "bare.git")
+	// Create bare repo directly in DataPath
+	bareRepo := filepath.Join(tmpDir, "bare.git")
 	os.MkdirAll(filepath.Join(bareRepo, "objects"), 0755)
 	os.MkdirAll(filepath.Join(bareRepo, "refs", "heads"), 0755)
 	os.WriteFile(filepath.Join(bareRepo, "HEAD"), []byte("ref: refs/heads/main\n"), 0644)
 	os.WriteFile(filepath.Join(bareRepo, "config"), []byte("[core]\n\tbare = true\n"), 0644)
 
 	// Create normal repo
-	normalRepo := filepath.Join(reposDir, "normal")
+	normalRepo := filepath.Join(tmpDir, "normal")
 	os.MkdirAll(filepath.Join(normalRepo, ".git", "objects"), 0755)
 	os.MkdirAll(filepath.Join(normalRepo, ".git", "refs", "heads"), 0755)
 	os.WriteFile(filepath.Join(normalRepo, ".git", "HEAD"), []byte("ref: refs/heads/main\n"), 0644)
 
 	// Create non-git directory (should be ignored)
-	os.MkdirAll(filepath.Join(reposDir, "not-a-repo"), 0755)
+	os.MkdirAll(filepath.Join(tmpDir, "not-a-repo"), 0755)
 
 	// Create hidden directory (should be ignored)
-	os.MkdirAll(filepath.Join(reposDir, ".hidden"), 0755)
+	os.MkdirAll(filepath.Join(tmpDir, ".hidden"), 0755)
 
 	// Create store
 	cfg := &config.Config{DataPath: tmpDir}
@@ -106,7 +102,7 @@ func TestRepoCreate(t *testing.T) {
 	}
 
 	// Check directory created
-	repoPath := filepath.Join(tmpDir, "repos", "new-repo.git")
+	repoPath := filepath.Join(tmpDir, "new-repo.git")
 	if _, err := os.Stat(repoPath); os.IsNotExist(err) {
 		t.Error("repo directory should be created")
 	}
@@ -149,7 +145,7 @@ func TestRepoDelete(t *testing.T) {
 	}
 
 	// Check directory removed
-	repoPath := filepath.Join(tmpDir, "repos", "to-delete.git")
+	repoPath := filepath.Join(tmpDir, "to-delete.git")
 	if _, err := os.Stat(repoPath); !os.IsNotExist(err) {
 		t.Error("repo directory should be removed")
 	}
@@ -213,11 +209,11 @@ func TestRepoRename(t *testing.T) {
 	}
 
 	// Check directory renamed
-	if _, err := os.Stat(filepath.Join(tmpDir, "repos", "new-name.git")); os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(tmpDir, "new-name.git")); os.IsNotExist(err) {
 		t.Error("new-name.git should exist")
 	}
 
-	if _, err := os.Stat(filepath.Join(tmpDir, "repos", "old-name.git")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(tmpDir, "old-name.git")); !os.IsNotExist(err) {
 		t.Error("old-name.git should not exist")
 	}
 }
@@ -229,12 +225,8 @@ func TestRepoMetadata(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Create repos directory
-	reposDir := filepath.Join(tmpDir, "repos")
-	os.MkdirAll(reposDir, 0755)
-
-	// Create repo with metadata
-	repoPath := filepath.Join(reposDir, "meta-test.git")
+	// Create repo with metadata directly in DataPath
+	repoPath := filepath.Join(tmpDir, "meta-test.git")
 	os.MkdirAll(filepath.Join(repoPath, "objects"), 0755)
 	os.WriteFile(filepath.Join(repoPath, "HEAD"), []byte("ref: refs/heads/main\n"), 0644)
 
@@ -244,7 +236,7 @@ func TestRepoMetadata(t *testing.T) {
 		Private:     true,
 		ProjectName: "Meta Test",
 	}
-	s := &FileStore{reposPath: reposDir, repos: make(map[string]*repoInfo)}
+	s := &FileStore{reposPath: tmpDir, repos: make(map[string]*repoInfo)}
 	s.saveRepoMeta(repoPath, meta)
 
 	// Create store to load metadata

@@ -112,7 +112,7 @@ func NewStore(ctx context.Context, cfg *config.Config) (store.Store, error) {
 		cfg:       cfg,
 		logger:    logger,
 		usersPath: GetUsersPath(cfg),
-		reposPath: filepath.Join(cfg.DataPath, "repos"),
+		reposPath: cfg.DataPath,
 		lfsPath:   filepath.Join(cfg.DataPath, "lfs"),
 		users:     make(map[string]*userInfo),
 		repos:     make(map[string]*repoInfo),
