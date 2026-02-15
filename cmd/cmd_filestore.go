@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/soft-serve/pkg/backend"
 	"github.com/charmbracelet/soft-serve/pkg/config"
+	"github.com/charmbracelet/soft-serve/pkg/db"
 	"github.com/charmbracelet/soft-serve/pkg/hooks"
 	"github.com/charmbracelet/soft-serve/pkg/store"
 	"github.com/charmbracelet/soft-serve/pkg/store/file"
@@ -44,8 +45,11 @@ func InitBackendContext(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("initialize file store: %w", err)
 	}
 
+	// Use NoopDB for filestore mode
+	noopDB := db.NewNoopDB()
+	ctx = db.WithContext(ctx, noopDB)
 	ctx = store.WithContext(ctx, filestore)
-	be := backend.New(ctx, cfg, nil, filestore)
+	be := backend.New(ctx, cfg, noopDB, filestore)
 	ctx = backend.WithContext(ctx, be)
 
 	cmd.SetContext(ctx)

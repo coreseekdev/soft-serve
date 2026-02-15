@@ -56,6 +56,11 @@ func (d *DB) Transaction(fn func(tx *Tx) error) error {
 
 // TransactionContext implements db.DB.
 func (d *DB) TransactionContext(ctx context.Context, fn func(tx *Tx) error) error {
+	// Handle nil DB (filestore mode)
+	if d.DB == nil {
+		return fn(&Tx{nil, d.logger})
+	}
+
 	txx, err := d.DB.BeginTxx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
