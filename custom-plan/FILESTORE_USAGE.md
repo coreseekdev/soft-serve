@@ -179,7 +179,26 @@ FileStore 验证所有路径操作，防止：
 
 - **Access Tokens**: 不支持令牌认证
 - **密码认证**: 不支持用户密码
-- **LFS 锁**: 不支持 LFS 文件锁定
+
+## LFS 锁支持
+
+FileStore 支持 LFS 文件锁定功能。锁数据存储在 `{lfs_path}/locks/{repo_name}.json`：
+
+```json
+{
+  "locks": [
+    {
+      "id": 1234567890,
+      "path": "path/to/file.bin",
+      "user_id": 123,
+      "repo_id": 456,
+      "refname": "refs/heads/main",
+      "created_at": "2024-01-01T00:00:00Z",
+      "updated_at": "2024-01-01T00:00:00Z"
+    }
+  ]
+}
+```
 
 ## 热重载
 
@@ -193,6 +212,24 @@ store.Reload()
 - 手动添加/删除用户目录后
 - 手动添加/删除仓库后
 - 修改配置后
+
+## 目录监视（自动热重载）
+
+FileStore 支持目录监视功能，自动检测用户和仓库目录的变化并重新加载：
+
+```go
+// 启动目录监视（30秒轮询间隔）
+stop := store.Watch(ctx, 30 * time.Second)
+
+// 停止监视
+stop()
+```
+
+监视功能特性：
+- 基于轮询方式检测变化（无需额外依赖）
+- 检测新用户/仓库、修改和删除
+- 自动调用 `Reload()` 重新加载数据
+- 可配置轮询间隔
 
 ## 迁移指南
 
