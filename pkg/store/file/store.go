@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"charm.land/log/v2"
 	"github.com/charmbracelet/soft-serve/pkg/config"
@@ -70,6 +71,7 @@ type repoInfo struct {
 	projectName string
 	collabs     map[string]string // username -> access level
 	webhooks    []webhookInfo
+	modTime     time.Time // Directory modification time
 }
 
 type webhookInfo struct {
@@ -110,8 +112,8 @@ func NewStore(ctx context.Context, cfg *config.Config) (store.Store, error) {
 		cfg:       cfg,
 		logger:    logger,
 		usersPath: GetUsersPath(cfg),
-		reposPath: cfg.DataPath,
-		lfsPath:   filepath.Join(cfg.DataPath, ".lfs"),
+		reposPath: filepath.Join(cfg.DataPath, "repos"),
+		lfsPath:   filepath.Join(cfg.DataPath, "lfs"),
 		users:     make(map[string]*userInfo),
 		repos:     make(map[string]*repoInfo),
 		adminKeys: make([]ssh.PublicKey, 0),
@@ -156,8 +158,8 @@ func (s *FileStore) createDirectories() error {
 		{s.reposPath, dirPerms},
 		{s.usersPath, dirPerms},
 		{s.lfsPath, dirPerms},
-		{filepath.Join(s.reposPath, "ssh"), sshPerms},
-		{filepath.Join(s.reposPath, "log"), dirPerms},
+		{filepath.Join(s.cfg.DataPath, "ssh"), sshPerms},
+		{filepath.Join(s.cfg.DataPath, "log"), dirPerms},
 	}
 
 	for _, dir := range dirs {

@@ -55,11 +55,6 @@ func (s *FileStore) discoverRepos() error {
 		name := entry.Name()
 		fullPath := filepath.Join(s.reposPath, name)
 
-		// Skip special directories
-		if name == ".lfs" || name == "ssh" || name == "log" || name == "users" {
-			continue
-		}
-
 		// Skip hidden directories
 		if strings.HasPrefix(name, ".") {
 			continue
@@ -74,6 +69,15 @@ func (s *FileStore) discoverRepos() error {
 		// Normalize name (remove .git suffix)
 		repoName := strings.TrimSuffix(name, ".git")
 
+		// Get directory modification time
+		info, err := entry.Info()
+		var modTime time.Time
+		if err != nil {
+			modTime = time.Now()
+		} else {
+			modTime = info.ModTime()
+		}
+
 		// Load metadata if exists
 		meta := s.loadRepoMeta(fullPath)
 
@@ -87,6 +91,7 @@ func (s *FileStore) discoverRepos() error {
 			projectName: meta.ProjectName,
 			collabs:     make(map[string]string),
 			webhooks:    make([]webhookInfo, 0),
+			modTime:     modTime,
 		}
 
 		// Load collaborators from metadata
@@ -487,8 +492,8 @@ func repoInfoToModel(r *repoInfo) models.Repo {
 		Mirror:      r.mirror,
 		Hidden:      r.hidden,
 		UserID:      sql.NullInt64{},
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		CreatedAt:   r.modTime,
+		UpdatedAt:   r.modTime,
 	}
 }
 
