@@ -34,24 +34,33 @@ var (
 		RunE: func(c *cobra.Command, _ []string) error {
 			ctx := c.Context()
 			cfg := config.DefaultConfig()
-			if cfg.Exist() {
-				if err := cfg.ParseFile(); err != nil {
-					return fmt.Errorf("parse config file: %w", err)
-				}
-			} else {
-				if err := cfg.WriteConfig(); err != nil {
-					return fmt.Errorf("write config file: %w", err)
-				}
-			}
 
-			// In filestore mode, use consistent SSH key paths in ~/.ssh
+			// In filestore mode, ALWAYS use consistent SSH key paths in ~/.ssh
 			// This ensures the same host key is used regardless of which directory
-			// soft-serve is started from
+			// soft-serve is started from. Set this BEFORE parsing/writing config.
 			if sshKeyPath := file.GetSSHKeyPath(); sshKeyPath != "" {
 				cfg.SSH.KeyPath = sshKeyPath
 			}
 			if sshClientKeyPath := file.GetSSHClientKeyPath(); sshClientKeyPath != "" {
 				cfg.SSH.ClientKeyPath = sshClientKeyPath
+			}
+
+			if cfg.Exist() {
+				if err := cfg.ParseFile(); err != nil {
+					return fmt.Errorf("parse config file: %w", err)
+				}
+				// Override SSH key paths again after parsing config file
+				// to ensure we always use ~/.ssh in filestore mode
+				if sshKeyPath := file.GetSSHKeyPath(); sshKeyPath != "" {
+					cfg.SSH.KeyPath = sshKeyPath
+				}
+				if sshClientKeyPath := file.GetSSHClientKeyPath(); sshClientKeyPath != "" {
+					cfg.SSH.ClientKeyPath = sshClientKeyPath
+				}
+			} else {
+				if err := cfg.WriteConfig(); err != nil {
+					return fmt.Errorf("write config file: %w", err)
+				}
 			}
 
 			if err := cfg.ParseEnv(); err != nil {
