@@ -2,6 +2,7 @@ package selection
 
 import (
 	"sort"
+	"strings"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
@@ -309,6 +310,8 @@ func (s *Selection) View() string {
 		// Show path header for Notes if there's a path
 		pathHeader := ""
 		if path := s.notes.Path(); path != "" {
+			// Convert backslashes to forward slashes for consistency
+			path = strings.ReplaceAll(path, "\\", "/")
 			pathHeader = s.common.Styles.Repo.HeaderName.
 				PaddingLeft(2).
 				Render("~/"+path) + "\n"
