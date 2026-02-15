@@ -64,6 +64,10 @@ func NewSSHServer(ctx context.Context) (*SSHServer, error) {
 		logger: logger,
 	}
 
+	// Log SSH key paths
+	logger.Infof("Using SSH host key: %s", cfg.SSH.KeyPath)
+	logger.Infof("Using SSH client key: %s", cfg.SSH.ClientKeyPath)
+
 	mw := []wish.Middleware{
 		rm.MiddlewareWithLogger(
 			logger,
