@@ -1,189 +1,311 @@
 package notes
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/soft-serve/pkg/ui/common"
 	"github.com/charmbracelet/soft-serve/pkg/ui/components/code"
 	"github.com/charmbracelet/soft-serve/pkg/ui/components/selector"
+	"github.com/dustin/go-humanize"
 )
+
+type notesView int
 
 const (
-	noFilesContent = "No visible files in your directory."
+	notesViewLoading notesView = iota
+	notesViewFiles
+	notesViewContent
 )
 
-// Notes is the model for the Notes page showing user's file tree.
-type Notes struct {
-	common       common.Common
-	username     string
-	userPath     string
-	currentPath  string   // Current directory path in the file tree
-	pathStack    []string // Stack for navigation history
-	files        []fileItem
-	fileList     *selector.Selector
-	fileContent  *code.Code
-	viewingFile  bool   // Whether we're viewing a file content
-	currentFile  string // Current file name being viewed
+var (
+	errNoFileSelected = errors.New("no file selected")
+	errBinaryFile     = errors.New("binary file")
+)
+
+var (
+	lineNo = key.NewBinding(
+		key.WithKeys("l"),
+		key.WithHelp("l", "toggle line numbers"),
+	)
+)
+
+// FileItemsMsg is a message that contains a list of files.
+type FileItemsMsg []selector.IdentifiableItem
+
+// FileContentMsg is a message that contains the content of a file.
+type FileContentMsg struct {
+	content string
+	ext     string
 }
 
-type fileItem struct {
+// NotesFileItem is a list item for a file in the notes directory.
+type NotesFileItem struct {
 	name  string
 	path  string
 	isDir bool
+	size  int64
+	mode  fs.FileMode
+}
+
+// ID returns the ID of the file item.
+func (i NotesFileItem) ID() string {
+	return i.name
+}
+
+// Title returns the title of the file item.
+func (i NotesFileItem) Title() string {
+	return common.UnquoteFilename(i.name)
+}
+
+// Description returns the description of the file item.
+func (i NotesFileItem) Description() string {
+	return ""
+}
+
+// Mode returns the mode of the file item.
+func (i NotesFileItem) Mode() fs.FileMode {
+	return i.mode
 }
 
 // FilterValue implements list.Item.
-func (f fileItem) FilterValue() string {
-	return f.name
+func (i NotesFileItem) FilterValue() string { return i.Title() }
+
+// NotesFileItemDelegate is the delegate for the file item list.
+type NotesFileItemDelegate struct {
+	common *common.Common
 }
 
-// Title implements list.DefaultItem.
-func (f fileItem) Title() string {
-	return f.name
-}
+// Height returns the height of the file item list. Implements list.ItemDelegate.
+func (d NotesFileItemDelegate) Height() int { return 1 }
 
-// Description implements list.DefaultItem.
-func (f fileItem) Description() string {
-	if f.isDir {
-		return "directory"
-	}
-	return "file"
-}
-
-// ID implements selector.IdentifiableItem.
-func (f fileItem) ID() string {
-	return f.name
-}
-
-// fileItemDelegate is the delegate for file items.
-type fileItemDelegate struct {
-	common.Common
-}
-
-// NewFileItemDelegate creates a new file item delegate.
-func NewFileItemDelegate(c common.Common) fileItemDelegate {
-	return fileItemDelegate{Common: c}
-}
-
-// Height implements list.ItemDelegate.
-func (d fileItemDelegate) Height() int {
-	return 1
-}
-
-// Spacing implements list.ItemDelegate.
-func (d fileItemDelegate) Spacing() int {
-	return 0
-}
+// Spacing returns the spacing of the file item list. Implements list.ItemDelegate.
+func (d NotesFileItemDelegate) Spacing() int { return 0 }
 
 // Update implements list.ItemDelegate.
-func (d fileItemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd {
+func (d NotesFileItemDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd {
+	item, ok := m.SelectedItem().(NotesFileItem)
+	if !ok {
+		return nil
+	}
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		switch {
+		case key.Matches(msg, d.common.KeyMap.Copy):
+			return copyCmd(item.name, fmt.Sprintf("File name %q copied to clipboard", item.name))
+		}
+	}
 	return nil
 }
 
 // Render implements list.ItemDelegate.
-func (d fileItemDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
-	fi, ok := item.(fileItem)
+func (d NotesFileItemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
+	i, ok := listItem.(NotesFileItem)
 	if !ok {
 		return
 	}
 
-	s := d.Styles.Tree
-	var name string
-	if fi.isDir {
+	s := d.common.Styles.Tree
+
+	name := i.Title()
+	size := humanize.Bytes(uint64(i.size)) //nolint:gosec
+	size = strings.ReplaceAll(size, " ", "")
+	sizeLen := lipgloss.Width(size)
+	if i.isDir {
+		size = strings.Repeat(" ", sizeLen)
 		if index == m.Index() {
-			name = s.Active.FileDir.Render(fi.name)
-			fmt.Fprint(w, s.Selector.Render(">"))
+			name = s.Active.FileDir.Render(name)
 		} else {
-			name = s.Normal.FileDir.Render(fi.name)
-			fmt.Fprint(w, s.Selector.Render(" "))
-		}
-	} else {
-		if index == m.Index() {
-			name = s.Active.FileName.Render(fi.name)
-			fmt.Fprint(w, s.Selector.Render(">"))
-		} else {
-			name = s.Normal.FileName.Render(fi.name)
-			fmt.Fprint(w, s.Selector.Render(" "))
+			name = s.Normal.FileDir.Render(name)
 		}
 	}
+	var nameStyle, sizeStyle, modeStyle lipgloss.Style
+	mode := i.Mode()
+	if index == m.Index() {
+		nameStyle = s.Active.FileName
+		sizeStyle = s.Active.FileSize
+		modeStyle = s.Active.FileMode
+		fmt.Fprint(w, s.Selector.Render(">")) //nolint:errcheck
+	} else {
+		nameStyle = s.Normal.FileName
+		sizeStyle = s.Normal.FileSize
+		modeStyle = s.Normal.FileMode
+		fmt.Fprint(w, s.Selector.Render(" ")) //nolint:errcheck
+	}
+	sizeStyle = sizeStyle.
+		Width(8).
+		Align(lipgloss.Right).
+		MarginLeft(1)
+	leftMargin := s.Selector.GetMarginLeft() +
+		s.Selector.GetWidth() +
+		s.Normal.FileMode.GetMarginLeft() +
+		s.Normal.FileMode.GetWidth() +
+		nameStyle.GetMarginLeft() +
+		sizeStyle.GetHorizontalFrameSize()
+	name = common.TruncateString(name, m.Width()-leftMargin)
+	name = nameStyle.Render(name)
+	size = sizeStyle.Render(size)
+	modeStr := modeStyle.Render(mode.String())
+	truncate := lipgloss.NewStyle().MaxWidth(m.Width() -
+		s.Selector.GetHorizontalFrameSize() -
+		s.Selector.GetWidth())
+	//nolint:errcheck
+	fmt.Fprint(w,
+		d.common.Zone.Mark(
+			i.ID(),
+			truncate.Render(fmt.Sprintf("%s%s%s",
+				modeStr,
+				size,
+				name,
+			)),
+		),
+	)
+}
 
-	fmt.Fprint(w, name)
+// Notes is the model for the Notes page showing user's file tree.
+type Notes struct {
+	common         common.Common
+	selector       *selector.Selector
+	code           *code.Code
+	activeView     notesView
+	userPath       string
+	path           string
+	currentItem    *NotesFileItem
+	currentContent FileContentMsg
+	lastSelected   []int
+	lineNumber     bool
+	spinner        spinner.Model
+	cursor         int
 }
 
 // New creates a new Notes model.
 func New(c common.Common) *Notes {
 	n := &Notes{
-		common:    c,
-		pathStack: make([]string, 0),
+		common:       c,
+		code:         code.New(c, "", ""),
+		activeView:   notesViewLoading,
+		lastSelected: make([]int, 0),
+		lineNumber:   true,
 	}
-
-	// Initialize file list
-	selector := selector.New(c, []selector.IdentifiableItem{}, NewFileItemDelegate(c))
-	selector.SetShowTitle(false)
+	selector := selector.New(c, []selector.IdentifiableItem{}, NotesFileItemDelegate{&c})
+	selector.SetShowFilter(false)
 	selector.SetShowHelp(false)
+	selector.SetShowPagination(false)
 	selector.SetShowStatusBar(false)
+	selector.SetShowTitle(false)
+	selector.SetFilteringEnabled(false)
 	selector.DisableQuitKeybindings()
-	n.fileList = selector
-
-	// Initialize code for file content display
-	fileContent := code.New(c, "", "")
-	fileContent.UseGlamour = false
-	n.fileContent = fileContent
-
+	selector.KeyMap.NextPage = c.KeyMap.NextPage
+	selector.KeyMap.PrevPage = c.KeyMap.PrevPage
+	n.selector = selector
+	n.code.ShowLineNumber = n.lineNumber
+	s := spinner.New(spinner.WithSpinner(spinner.Dot),
+		spinner.WithStyle(c.Styles.Spinner))
+	n.spinner = s
 	return n
+}
+
+// Path implements common.TabComponent.
+func (n *Notes) Path() string {
+	path := n.path
+	if path == "" {
+		return ""
+	}
+	return path
+}
+
+// TabName returns the tab name.
+func (n *Notes) TabName() string {
+	return "Notes"
 }
 
 // SetSize implements common.Component.
 func (n *Notes) SetSize(width, height int) {
 	n.common.SetSize(width, height)
-	n.fileList.SetSize(width, height-2)
-	n.fileContent.SetSize(width, height-2)
+	n.selector.SetSize(width, height)
+	n.code.SetSize(width, height)
 }
 
 // ShortHelp implements help.KeyMap.
 func (n *Notes) ShortHelp() []key.Binding {
-	if n.viewingFile {
-		ck := n.fileContent.KeyMap
+	k := n.selector.KeyMap
+	switch n.activeView {
+	case notesViewFiles:
 		return []key.Binding{
+			n.common.KeyMap.SelectItem,
 			n.common.KeyMap.BackItem,
-			ck.Up,
-			ck.Down,
+			k.CursorUp,
+			k.CursorDown,
 		}
-	}
-	k := n.fileList.KeyMap
-	return []key.Binding{
-		n.common.KeyMap.SelectItem,
-		n.common.KeyMap.BackItem,
-		k.CursorUp,
-		k.CursorDown,
+	case notesViewContent:
+		return []key.Binding{
+			n.common.KeyMap.UpDown,
+			n.common.KeyMap.BackItem,
+		}
+	default:
+		return []key.Binding{}
 	}
 }
 
 // FullHelp implements help.KeyMap.
 func (n *Notes) FullHelp() [][]key.Binding {
-	if n.viewingFile {
-		k := n.fileContent.KeyMap
-		return [][]key.Binding{
-			{n.common.KeyMap.BackItem},
-			{k.Up, k.Down},
-			{k.PageDown, k.PageUp},
-			{k.HalfPageDown, k.HalfPageUp},
+	b := make([][]key.Binding, 0)
+	copyKey := n.common.KeyMap.Copy
+	switch n.activeView {
+	case notesViewFiles:
+		copyKey.SetHelp("c", "copy name")
+		k := n.selector.KeyMap
+		b = append(b, [][]key.Binding{
+			{
+				n.common.KeyMap.SelectItem,
+				n.common.KeyMap.BackItem,
+			},
+			{
+				k.CursorUp,
+				k.CursorDown,
+				k.NextPage,
+				k.PrevPage,
+			},
+			{
+				k.GoToStart,
+				k.GoToEnd,
+			},
+		}...)
+	case notesViewContent:
+		if !n.code.UseGlamour {
+			b = append(b, []key.Binding{lineNo})
 		}
+		copyKey.SetHelp("c", "copy content")
+		k := n.code.KeyMap
+		b = append(b, []key.Binding{
+			n.common.KeyMap.BackItem,
+		})
+		b = append(b, [][]key.Binding{
+			{
+				k.PageDown,
+				k.PageUp,
+				k.HalfPageDown,
+				k.HalfPageUp,
+			},
+			{
+				k.Down,
+				k.Up,
+				n.common.KeyMap.GotoTop,
+				n.common.KeyMap.GotoBottom,
+			},
+		}...)
 	}
-	k := n.fileList.KeyMap
-	return [][]key.Binding{
-		{n.common.KeyMap.SelectItem, n.common.KeyMap.BackItem},
-		{k.CursorUp, k.CursorDown},
-		{k.NextPage, k.PrevPage, k.GoToStart, k.GoToEnd},
-	}
+	return append(b, []key.Binding{copyKey})
 }
 
 // Init implements tea.Model.
@@ -195,56 +317,205 @@ func (n *Notes) Init() tea.Cmd {
 
 	if pk == nil {
 		// Anonymous user - no notes directory
-		return n.fileList.Init()
+		n.activeView = notesViewFiles
+		return n.setItems([]selector.IdentifiableItem{})
 	}
 
 	user, err := be.UserByPublicKey(ctx, pk)
 	if err != nil {
-		return n.fileList.Init()
+		n.activeView = notesViewFiles
+		return n.setItems([]selector.IdentifiableItem{})
 	}
 
-	n.username = user.Username()
-
-	// Load user directory files (for filestore mode)
 	// User path is in SOFT_SERVE_USER_HOME/{username}/
 	cfg := n.common.Config()
 	if cfg != nil {
 		usersPath := getUsersPath(cfg.DataPath)
 		if usersPath != "" {
-			n.userPath = filepath.Join(usersPath, n.username)
-			n.currentPath = n.userPath
-			n.loadFiles()
+			n.userPath = filepath.Join(usersPath, user.Username())
 		}
 	}
 
-	return tea.Batch(n.fileList.Init())
+	n.path = ""
+	n.currentItem = nil
+	n.lastSelected = make([]int, 0)
+	n.code.UseGlamour = false
+	n.activeView = notesViewLoading
+
+	return tea.Batch(n.spinner.Tick, n.updateFilesCmd)
 }
 
 // getUsersPath returns the path to users directory.
 func getUsersPath(dataPath string) string {
 	// Check for SOFT_SERVE_USER_HOME env
 	if envPath := os.Getenv("SOFT_SERVE_USER_HOME"); envPath != "" {
-		return envPath
+		return expandPath(envPath)
 	}
 	// Default to {DataPath}/users
 	return filepath.Join(dataPath, "users")
 }
 
-// loadFiles loads the files in the current directory.
-func (n *Notes) loadFiles() {
-	if n.currentPath == "" {
-		n.files = []fileItem{}
-		return
+// expandPath expands ~ and environment variables in a path.
+func expandPath(path string) string {
+	if path == "" {
+		return path
+	}
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return path
+		}
+		path = filepath.Join(home, path[2:])
+	}
+	return os.ExpandEnv(path)
+}
+
+// Update implements tea.Model.
+func (n *Notes) Update(msg tea.Msg) (common.Model, tea.Cmd) {
+	cmds := make([]tea.Cmd, 0)
+	switch msg := msg.(type) {
+	case FileItemsMsg:
+		cmds = append(cmds,
+			n.selector.SetItems(msg),
+		)
+		n.activeView = notesViewFiles
+		if n.cursor >= 0 {
+			n.selector.Select(n.cursor)
+			n.cursor = -1
+		}
+	case FileContentMsg:
+		n.activeView = notesViewContent
+		n.currentContent = msg
+		n.code.UseGlamour = common.IsFileMarkdown(n.currentContent.content, n.currentContent.ext)
+		cmds = append(cmds, n.code.SetContent(msg.content, msg.ext))
+		n.code.GotoTop()
+	case selector.SelectMsg:
+		switch sel := msg.IdentifiableItem.(type) {
+		case NotesFileItem:
+			n.currentItem = &sel
+			n.path = filepath.Join(n.path, sel.name)
+			if sel.isDir {
+				cmds = append(cmds, n.selectDirCmd)
+			} else {
+				cmds = append(cmds, n.selectFileCmd)
+			}
+		}
+	case tea.KeyPressMsg:
+		switch n.activeView {
+		case notesViewFiles:
+			switch {
+			case key.Matches(msg, n.common.KeyMap.SelectItem):
+				cmds = append(cmds, n.selector.SelectItemCmd)
+			case key.Matches(msg, n.common.KeyMap.BackItem):
+				cmds = append(cmds, n.deselectItemCmd())
+			}
+		case notesViewContent:
+			switch {
+			case key.Matches(msg, n.common.KeyMap.BackItem):
+				cmds = append(cmds, n.deselectItemCmd())
+			case key.Matches(msg, n.common.KeyMap.Copy):
+				cmds = append(cmds, copyCmd(n.currentContent.content, "File contents copied to clipboard"))
+			case key.Matches(msg, lineNo) && !n.code.UseGlamour:
+				n.lineNumber = !n.lineNumber
+				n.code.ShowLineNumber = n.lineNumber
+				cmds = append(cmds, n.code.SetContent(n.currentContent.content, n.currentContent.ext))
+			}
+		}
+	case tea.WindowSizeMsg:
+		n.SetSize(msg.Width, msg.Height)
+		switch n.activeView {
+		case notesViewFiles:
+			cmds = append(cmds, n.updateFilesCmd)
+		case notesViewContent:
+			if n.currentContent.content != "" {
+				m, cmd := n.code.Update(msg)
+				n.code = m.(*code.Code)
+				if cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			}
+		}
+	case spinner.TickMsg:
+		if n.activeView == notesViewLoading && n.spinner.ID() == msg.ID {
+			s, cmd := n.spinner.Update(msg)
+			n.spinner = s
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+	}
+	switch n.activeView {
+	case notesViewFiles:
+		m, cmd := n.selector.Update(msg)
+		n.selector = m.(*selector.Selector)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case notesViewContent:
+		m, cmd := n.code.Update(msg)
+		n.code = m.(*code.Code)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	return n, tea.Batch(cmds...)
+}
+
+// View implements tea.Model.
+func (n *Notes) View() string {
+	switch n.activeView {
+	case notesViewLoading:
+		return renderLoading(n.common, n.spinner)
+	case notesViewFiles:
+		return n.selector.View()
+	case notesViewContent:
+		return n.code.View()
+	default:
+		return ""
+	}
+}
+
+// SpinnerID implements common.TabComponent.
+func (n *Notes) SpinnerID() int {
+	return n.spinner.ID()
+}
+
+// StatusBarValue returns the status bar value.
+func (n *Notes) StatusBarValue() string {
+	p := n.path
+	if p == "" {
+		return " "
+	}
+	return p
+}
+
+// StatusBarInfo returns the status bar info.
+func (n *Notes) StatusBarInfo() string {
+	switch n.activeView {
+	case notesViewFiles:
+		return fmt.Sprintf("# %d/%d", n.selector.Index()+1, len(n.selector.VisibleItems()))
+	case notesViewContent:
+		return common.ScrollPercent(n.code.ScrollPosition())
+	default:
+		return ""
+	}
+}
+
+func (n *Notes) updateFilesCmd() tea.Msg {
+	files := make([]selector.IdentifiableItem, 0)
+	dirs := make([]selector.IdentifiableItem, 0)
+
+	if n.userPath == "" {
+		return FileItemsMsg{}
 	}
 
-	entries, err := os.ReadDir(n.currentPath)
+	currentPath := filepath.Join(n.userPath, n.path)
+
+	entries, err := os.ReadDir(currentPath)
 	if err != nil {
-		n.files = []fileItem{}
-		return
+		return FileItemsMsg{}
 	}
 
-	// Separate dirs and files, sort each
-	var dirs, files []fileItem
 	for _, entry := range entries {
 		name := entry.Name()
 		// Skip hidden files/directories (starting with .)
@@ -252,11 +523,19 @@ func (n *Notes) loadFiles() {
 			continue
 		}
 
-		item := fileItem{
-			name:  name,
-			path:  filepath.Join(n.currentPath, name),
-			isDir: entry.IsDir(),
+		info, err := entry.Info()
+		if err != nil {
+			continue
 		}
+
+		item := NotesFileItem{
+			name:  name,
+			path:  filepath.Join(currentPath, name),
+			isDir: entry.IsDir(),
+			size:  info.Size(),
+			mode:  info.Mode(),
+		}
+
 		if entry.IsDir() {
 			dirs = append(dirs, item)
 		} else {
@@ -264,147 +543,86 @@ func (n *Notes) loadFiles() {
 		}
 	}
 
-	// Combine: dirs first, then files
-	n.files = make([]fileItem, 0, len(dirs)+len(files))
-	n.files = append(n.files, dirs...)
-	n.files = append(n.files, files...)
-
-	// Convert to selector items
-	items := make([]selector.IdentifiableItem, len(n.files))
-	for i, f := range n.files {
-		items[i] = f
-	}
-	n.fileList.SetItems(items)
+	// Sort: directories first, then files, alphabetically within each group
+	return FileItemsMsg(append(dirs, files...))
 }
 
-// Update implements tea.Model.
-func (n *Notes) Update(msg tea.Msg) (common.Model, tea.Cmd) {
-	cmds := make([]tea.Cmd, 0)
-
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		n.SetSize(msg.Width, msg.Height)
-	case tea.KeyPressMsg:
-		if n.viewingFile {
-			switch {
-			case key.Matches(msg, n.common.KeyMap.BackItem):
-				n.viewingFile = false
-				n.currentFile = ""
-			}
-		} else {
-			switch {
-			case key.Matches(msg, n.common.KeyMap.SelectItem):
-				cmds = append(cmds, n.selectItemCmd)
-			case key.Matches(msg, n.common.KeyMap.BackItem):
-				cmds = append(cmds, n.goBackCmd)
-			}
-		}
-	case selector.SelectMsg:
-		if !n.viewingFile {
-			cmds = append(cmds, n.selectItemCmd)
-		}
+func (n *Notes) selectDirCmd() tea.Msg {
+	if n.currentItem != nil && n.currentItem.isDir {
+		n.lastSelected = append(n.lastSelected, n.selector.Index())
+		n.cursor = 0
+		return n.updateFilesCmd()
 	}
-
-	// Update active component
-	if n.viewingFile {
-		c, cmd := n.fileContent.Update(msg)
-		n.fileContent = c.(*code.Code)
-		if cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-	} else {
-		s, cmd := n.fileList.Update(msg)
-		n.fileList = s.(*selector.Selector)
-		if cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-	}
-
-	return n, tea.Batch(cmds...)
+	return common.ErrorMsg(errNoFileSelected)
 }
 
-func (n *Notes) selectItemCmd() tea.Msg {
-	idx := n.fileList.Index()
-	if idx < 0 || idx >= len(n.files) {
-		return nil
-	}
-
-	item := n.files[idx]
-	if item.isDir {
-		// Navigate into directory
-		n.pathStack = append(n.pathStack, n.currentPath)
-		n.currentPath = item.path
-		n.loadFiles()
-		n.fileList.Select(0)
-	} else {
-		// View file content
-		data, err := os.ReadFile(item.path)
+func (n *Notes) selectFileCmd() tea.Msg {
+	i := n.currentItem
+	if i != nil && !i.isDir {
+		// Read file content
+		data, err := os.ReadFile(i.path)
 		if err != nil {
+			n.path = filepath.Dir(n.path)
 			return common.ErrorMsg(err)
 		}
-		n.viewingFile = true
-		n.currentFile = item.name
-		// Detect file extension for syntax highlighting
-		ext := filepath.Ext(item.name)
-		n.fileContent.SetContent(string(data), ext)
+
+		// Check if binary
+		if isBinary(data) {
+			n.path = filepath.Dir(n.path)
+			return common.ErrorMsg(errBinaryFile)
+		}
+
+		n.lastSelected = append(n.lastSelected, n.selector.Index())
+		ext := filepath.Ext(i.name)
+		return FileContentMsg{string(data), ext}
 	}
-	return nil
+	return common.ErrorMsg(errNoFileSelected)
 }
 
-func (n *Notes) goBackCmd() tea.Msg {
-	if n.viewingFile {
-		n.viewingFile = false
-		n.currentFile = ""
-		return nil
+func (n *Notes) deselectItemCmd() tea.Cmd {
+	n.path = filepath.Dir(n.path)
+	if n.path == "." {
+		n.path = ""
 	}
-
-	if len(n.pathStack) > 0 {
-		// Go back to parent directory
-		n.currentPath = n.pathStack[len(n.pathStack)-1]
-		n.pathStack = n.pathStack[:len(n.pathStack)-1]
-		n.loadFiles()
-		n.fileList.Select(0)
+	index := 0
+	if len(n.lastSelected) > 0 {
+		index = n.lastSelected[len(n.lastSelected)-1]
+		n.lastSelected = n.lastSelected[:len(n.lastSelected)-1]
 	}
-	return nil
+	n.cursor = index
+	n.activeView = notesViewFiles
+	n.code.UseGlamour = false
+	return n.updateFilesCmd
 }
 
-// View implements tea.Model.
-func (n *Notes) View() string {
-	var content string
+func (n *Notes) setItems(items []selector.IdentifiableItem) tea.Cmd {
+	return func() tea.Msg {
+		return FileItemsMsg(items)
+	}
+}
 
-	// Build path breadcrumb
-	var breadcrumb string
-	if n.userPath != "" && strings.HasPrefix(n.currentPath, n.userPath) {
-		rel, err := filepath.Rel(n.userPath, n.currentPath)
-		if err == nil && rel != "." {
-			breadcrumb = fmt.Sprintf(" ~/%s", rel)
-		} else if rel == "." {
-			breadcrumb = " ~"
+func renderLoading(c common.Common, s spinner.Model) string {
+	return c.Styles.Spinner.Copy().MarginTop(2).Render(s.View() + " Loading...")
+}
+
+func copyCmd(content string, msg string) tea.Cmd {
+	return tea.Sequence(
+		tea.SetClipboard(content),
+		tea.Println(msg),
+	)
+}
+
+// isBinary checks if data appears to be binary content.
+func isBinary(data []byte) bool {
+	// Check first 512 bytes for null bytes (common binary indicator)
+	maxCheck := 512
+	if len(data) < maxCheck {
+		maxCheck = len(data)
+	}
+	for i := 0; i < maxCheck; i++ {
+		if data[i] == 0 {
+			return true
 		}
 	}
-
-	if n.viewingFile {
-		// Viewing file content
-		header := n.common.Styles.Repo.HeaderName.Render(n.currentFile)
-		headerStyle := n.common.Styles.Repo.Header.Render(header)
-		content = lipgloss.JoinVertical(lipgloss.Left,
-			headerStyle,
-			n.fileContent.View(),
-		)
-	} else if len(n.files) == 0 {
-		content = n.common.Styles.NoContent.Render(noFilesContent)
-	} else {
-		content = n.fileList.View()
-	}
-
-	// Add path breadcrumb at the top
-	pathLine := fmt.Sprintf("Notes: %s", breadcrumb)
-	header := n.common.Styles.Tabs.Render(pathLine)
-
-	view := lipgloss.JoinVertical(lipgloss.Left,
-		header,
-		content,
-	)
-
-	return view
+	return false
 }
