@@ -306,10 +306,15 @@ func (s *Selection) View() string {
 			Height(s.common.Height - hm)
 		view = ss.Render(s.messages.View())
 	case notesPane:
+		// Show path header for Notes if there's a path
+		pathHeader := ""
+		if path := s.notes.Path(); path != "" {
+			pathHeader = s.common.Styles.Repo.HeaderName.Render("~/"+path) + "\n"
+		}
 		ss := lipgloss.NewStyle().
 			Width(s.common.Width - wm).
-			Height(s.common.Height - hm)
-		view = ss.Render(s.notes.View())
+			Height(s.common.Height - hm - lipgloss.Height(pathHeader))
+		view = pathHeader + ss.Render(s.notes.View())
 	}
 	if s.activePane != selectorPane || s.FilterState() != list.Filtering {
 		tabs := s.common.Styles.Tabs.Render(s.tabs.View())
