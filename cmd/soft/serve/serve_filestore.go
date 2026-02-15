@@ -67,12 +67,6 @@ var (
 				return fmt.Errorf("parse environment variables: %w", err)
 			}
 
-			// Debug: Print SSH key paths being used
-			fmt.Printf("SSH Host Key:      %s\n", cfg.SSH.KeyPath)
-			fmt.Printf("SSH Client Key:    %s\n", cfg.SSH.ClientKeyPath)
-			fmt.Printf("Data Path:         %s\n", cfg.DataPath)
-			fmt.Println()
-
 			// Create custom hooks directory if it doesn't exist
 			customHooksPath := filepath.Join(cfg.DataPath, "hooks")
 			if _, err := os.Stat(customHooksPath); err != nil && os.IsNotExist(err) {

@@ -200,7 +200,9 @@ func GetSSHKeyPath() string {
 
 // GetSSHClientKeyPath returns the path to the SSH client key for filestore mode.
 // It first checks the SOFT_SERVE_SSH_CLIENT_KEY_PATH environment variable,
-// then falls back to ~/.ssh/soft_serve_client_ed25519.
+// then looks for existing SSH keys in the user's ~/.ssh directory (the same
+// keys used for GitHub and other services), preferring ed25519 over others.
+// This allows soft-serve to use the user's existing SSH identity.
 func GetSSHClientKeyPath() string {
 	if path := os.Getenv("SOFT_SERVE_SSH_CLIENT_KEY_PATH"); path != "" {
 		return expandPath(path)
@@ -209,7 +211,25 @@ func GetSSHClientKeyPath() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".ssh", "soft_serve_client_ed25519")
+	sshDir := filepath.Join(home, ".ssh")
+
+	// Look for existing keys in order of preference
+	// Prefer ed25519 (modern, secure), then ecdsa, then rsa (legacy)
+	keyNames := []string{
+		"id_ed25519",
+		"id_ecdsa",
+		"id_rsa",
+	}
+
+	for _, name := range keyNames {
+		keyPath := filepath.Join(sshDir, name)
+		if _, err := os.Stat(keyPath); err == nil {
+			return keyPath
+		}
+	}
+
+	// No existing key found, default to ed25519 (will be created if needed)
+	return filepath.Join(sshDir, "id_ed25519")
 }
 
 // expandPath expands ~ and environment variables in a path.
