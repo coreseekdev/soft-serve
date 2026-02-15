@@ -83,12 +83,16 @@ type webhookInfo struct {
 func NewStore(ctx context.Context, cfg *config.Config) (store.Store, error) {
 	logger := log.FromContext(ctx).WithPrefix("filestore")
 
-	// Override DataPath if it's the default value
-	if cfg.DataPath == "data" && os.Getenv("SOFT_SERVE_DATA_PATH") == "" {
-		var err error
-		cfg.DataPath, err = os.Getwd()
-		if err != nil {
-			return nil, fmt.Errorf("get working directory: %w", err)
+	// In filestore mode, use current directory as default DataPath
+	// unless explicitly set via SOFT_SERVE_DATA_PATH env or config file
+	if os.Getenv("SOFT_SERVE_DATA_PATH") == "" {
+		// Check if DataPath is the default "data" or its absolute path form
+		absData, err := filepath.Abs("data")
+		if err == nil && (cfg.DataPath == "data" || cfg.DataPath == absData) {
+			cfg.DataPath, err = os.Getwd()
+			if err != nil {
+				return nil, fmt.Errorf("get working directory: %w", err)
+			}
 		}
 	}
 
