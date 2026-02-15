@@ -311,15 +311,17 @@ func (n *Notes) Init() tea.Cmd {
 
 	if pk == nil {
 		// Anonymous user - no notes directory
+		n.common.Logger.Debug("notes: no public key, showing empty list")
 		n.activeView = notesViewFiles
-		return n.setItems([]selector.IdentifiableItem{})
+		return tea.Batch(n.selector.Init(), n.setItems([]selector.IdentifiableItem{}))
 	}
 
 	user, err := be.UserByPublicKey(ctx, pk)
 	if err != nil {
 		// User not found in users_path - show empty list
+		n.common.Logger.Debugf("notes: user not found by public key: %v", err)
 		n.activeView = notesViewFiles
-		return n.setItems([]selector.IdentifiableItem{})
+		return tea.Batch(n.selector.Init(), n.setItems([]selector.IdentifiableItem{}))
 	}
 
 	// User path is in SOFT_SERVE_USER_HOME/{username}/
@@ -333,17 +335,20 @@ func (n *Notes) Init() tea.Cmd {
 
 	// If userPath is still empty, show empty list
 	if n.userPath == "" {
+		n.common.Logger.Debug("notes: userPath is empty, showing empty list")
 		n.activeView = notesViewFiles
-		return n.setItems([]selector.IdentifiableItem{})
+		return tea.Batch(n.selector.Init(), n.setItems([]selector.IdentifiableItem{}))
 	}
+
+	n.common.Logger.Debugf("notes: userPath set to %s", n.userPath)
 
 	n.path = ""
 	n.currentItem = nil
 	n.lastSelected = make([]int, 0)
 	n.code.UseGlamour = false
 
-	// Directly load files without loading state
-	return n.loadFilesCmd()
+	// Load files
+	return tea.Batch(n.selector.Init(), n.loadFilesCmd())
 }
 
 // loadFilesCmd loads files and returns FileItemsMsg directly.
@@ -366,8 +371,12 @@ func (n *Notes) updateFilesMsg() FileItemsMsg {
 
 	entries, err := os.ReadDir(currentPath)
 	if err != nil {
+		// Log the error for debugging
+		n.common.Logger.Debugf("notes: failed to read directory %s: %v", currentPath, err)
 		return FileItemsMsg{}
 	}
+
+	n.common.Logger.Debugf("notes: reading directory %s, found %d entries", currentPath, len(entries))
 
 	for _, entry := range entries {
 		name := entry.Name()
