@@ -165,7 +165,14 @@ func (s *SSHServer) PublicKeyHandler(ctx ssh.Context, pk ssh.PublicKey) (allowed
 		return false
 	}
 
+	// Check if the key is authorized (admin key or registered user)
+	if !s.be.IsPublicKeyAuthorized(ctx, pk) {
+		publicKeyCounter.WithLabelValues("false").Inc()
+		return false
+	}
+
 	allowed = true
+	publicKeyCounter.WithLabelValues("true").Inc()
 
 	// XXX: store the first "approved" public-key fingerprint in the
 	// permissions block to use for authentication later.

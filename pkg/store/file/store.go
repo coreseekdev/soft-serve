@@ -15,7 +15,6 @@ import (
 	"charm.land/log/v2"
 	"github.com/charmbracelet/soft-serve/pkg/config"
 	"github.com/charmbracelet/soft-serve/pkg/sshutils"
-	"github.com/charmbracelet/soft-serve/pkg/store"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -82,7 +81,7 @@ type webhookInfo struct {
 }
 
 // NewStore creates a new file-based store.
-func NewStore(ctx context.Context, cfg *config.Config) (store.Store, error) {
+func NewStore(ctx context.Context, cfg *config.Config) (*FileStore, error) {
 	logger := log.FromContext(ctx).WithPrefix("filestore")
 
 	// In filestore mode, use current directory as default DataPath
@@ -387,6 +386,31 @@ func (s *FileStore) isAdminKey(key ssh.PublicKey) bool {
 			return true
 		}
 	}
+	return false
+}
+
+// IsPublicKeyAuthorized checks if a public key is authorized to connect.
+// A key is authorized if it matches:
+// - An admin key (from ~/.ssh/id_*.pub)
+// - A user's key (from users_path/{username}/.ssh/*.pub)
+func (s *FileStore) IsPublicKeyAuthorized(key ssh.PublicKey) bool {
+	// Check admin keys first
+	if s.isAdminKey(key) {
+		return true
+	}
+
+	// Check user keys
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, u := range s.users {
+		for _, userKey := range u.keys {
+			if sshutils.KeysEqual(key, userKey) {
+				return true
+			}
+		}
+	}
+
 	return false
 }
 

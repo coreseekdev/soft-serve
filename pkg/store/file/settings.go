@@ -27,8 +27,9 @@ func (s *FileStore) SetAnonAccess(ctx context.Context, h db.Handler, level acces
 
 // GetAllowKeylessAccess returns whether keyless access is allowed.
 func (s *FileStore) GetAllowKeylessAccess(ctx context.Context, h db.Handler) (bool, error) {
-	// In file store, we allow keyless access by default
-	return true, nil
+	// In file store, we do NOT allow keyless access
+	// Only admin keys and registered users can connect
+	return false, nil
 }
 
 // SetAllowKeylessAccess sets whether keyless access is allowed.

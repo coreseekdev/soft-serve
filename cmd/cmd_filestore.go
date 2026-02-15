@@ -48,7 +48,7 @@ func InitBackendContext(cmd *cobra.Command, _ []string) error {
 	// Use NoopDB for filestore mode
 	noopDB := db.NewNoopDB()
 	ctx = db.WithContext(ctx, noopDB)
-	ctx = store.WithContext(ctx, filestore)
+	ctx = store.WithContext(ctx, filestore) // filestore implements store.Store
 	be := backend.New(ctx, cfg, noopDB, filestore)
 	ctx = backend.WithContext(ctx, be)
 
