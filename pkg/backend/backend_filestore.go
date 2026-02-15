@@ -14,13 +14,13 @@ import (
 
 // New returns a new Soft Serve backend for file store mode.
 // Repositories are stored directly in DataPath (current directory).
-// The db parameter is ignored in filestore mode.
-func New(ctx context.Context, cfg *config.Config, _ *db.DB, st store.Store) *Backend {
+// The db parameter should be a NoopDB in filestore mode.
+func New(ctx context.Context, cfg *config.Config, noopDB *db.DB, st store.Store) *Backend {
 	logger := log.FromContext(ctx).WithPrefix("backend")
 	b := &Backend{
 		ctx:       ctx,
 		cfg:       cfg,
-		db:        nil, // No database in filestore mode
+		db:        noopDB, // Use NoopDB for TransactionContext calls
 		store:     st,
 		logger:    logger,
 		manager:   task.NewManager(ctx),

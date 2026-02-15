@@ -10,7 +10,6 @@ import (
 	"path"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/soft-serve/git"
@@ -415,7 +414,8 @@ func (d *Backend) Repository(ctx context.Context, name string) (proto.Repository
 		if !errors.Is(err, fs.ErrNotExist) {
 			d.logger.Errorf("failed to stat repository path: %v", err)
 		}
-		return nil, proto.ErrRepoNotFound
+		d.logger.Debugf("repository path not found: %s (name=%s)", rp, name)
+		return nil, fmt.Errorf("%w: %s", proto.ErrRepoNotFound, rp)
 	}
 
 	if err := d.db.TransactionContext(ctx, func(tx *db.Tx) error {
@@ -628,18 +628,6 @@ func (d *Backend) SetProjectName(ctx context.Context, repo string, name string) 
 			return d.store.SetRepoProjectNameByName(ctx, tx, repo, name)
 		}),
 	)
-}
-
-// repoPath returns the path to a repository.
-func (d *Backend) repoPath(name string) string {
-	name = utils.SanitizeRepo(name)
-	rn := strings.ReplaceAll(name, "/", string(os.PathSeparator))
-	if d.reposPath == "" {
-		// Filestore mode: repos directly in DataPath
-		return filepath.Join(d.cfg.DataPath, rn+".git")
-	}
-	// Dbstore mode: repos in DataPath/repos/
-	return filepath.Join(d.cfg.DataPath, d.reposPath, rn+".git")
 }
 
 var _ proto.Repository = (*repo)(nil)
