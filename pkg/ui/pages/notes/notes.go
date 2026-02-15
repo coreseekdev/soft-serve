@@ -11,7 +11,6 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
-	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/soft-serve/pkg/ui/common"
@@ -23,8 +22,7 @@ import (
 type notesView int
 
 const (
-	notesViewLoading notesView = iota
-	notesViewFiles
+	notesViewFiles notesView = iota
 	notesViewContent
 )
 
@@ -184,7 +182,6 @@ type Notes struct {
 	currentContent FileContentMsg
 	lastSelected   []int
 	lineNumber     bool
-	spinner        spinner.Model
 	cursor         int
 }
 
@@ -193,7 +190,7 @@ func New(c common.Common) *Notes {
 	n := &Notes{
 		common:       c,
 		code:         code.New(c, "", ""),
-		activeView:   notesViewLoading,
+		activeView:   notesViewFiles,
 		lastSelected: make([]int, 0),
 		lineNumber:   true,
 	}
@@ -209,9 +206,6 @@ func New(c common.Common) *Notes {
 	selector.KeyMap.PrevPage = c.KeyMap.PrevPage
 	n.selector = selector
 	n.code.ShowLineNumber = n.lineNumber
-	s := spinner.New(spinner.WithSpinner(spinner.Dot),
-		spinner.WithStyle(c.Styles.Spinner))
-	n.spinner = s
 	return n
 }
 
@@ -323,6 +317,7 @@ func (n *Notes) Init() tea.Cmd {
 
 	user, err := be.UserByPublicKey(ctx, pk)
 	if err != nil {
+		// User not found in users_path - show empty list
 		n.activeView = notesViewFiles
 		return n.setItems([]selector.IdentifiableItem{})
 	}
@@ -336,13 +331,73 @@ func (n *Notes) Init() tea.Cmd {
 		}
 	}
 
+	// If userPath is still empty, show empty list
+	if n.userPath == "" {
+		n.activeView = notesViewFiles
+		return n.setItems([]selector.IdentifiableItem{})
+	}
+
 	n.path = ""
 	n.currentItem = nil
 	n.lastSelected = make([]int, 0)
 	n.code.UseGlamour = false
-	n.activeView = notesViewLoading
 
-	return tea.Batch(n.spinner.Tick, n.updateFilesCmd)
+	// Directly load files without loading state
+	return n.loadFilesCmd()
+}
+
+// loadFilesCmd loads files and returns FileItemsMsg directly.
+func (n *Notes) loadFilesCmd() tea.Cmd {
+	return func() tea.Msg {
+		return n.updateFilesMsg()
+	}
+}
+
+// updateFilesMsg returns the file items message.
+func (n *Notes) updateFilesMsg() FileItemsMsg {
+	files := make([]selector.IdentifiableItem, 0)
+	dirs := make([]selector.IdentifiableItem, 0)
+
+	if n.userPath == "" {
+		return FileItemsMsg{}
+	}
+
+	currentPath := filepath.Join(n.userPath, n.path)
+
+	entries, err := os.ReadDir(currentPath)
+	if err != nil {
+		return FileItemsMsg{}
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		// Skip hidden files/directories (starting with .)
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		item := NotesFileItem{
+			name:  name,
+			path:  filepath.Join(currentPath, name),
+			isDir: entry.IsDir(),
+			size:  info.Size(),
+			mode:  info.Mode(),
+		}
+
+		if entry.IsDir() {
+			dirs = append(dirs, item)
+		} else {
+			files = append(files, item)
+		}
+	}
+
+	// Sort: directories first, then files, alphabetically within each group
+	return FileItemsMsg(append(dirs, files...))
 }
 
 // getUsersPath returns the path to users directory.
@@ -425,7 +480,7 @@ func (n *Notes) Update(msg tea.Msg) (common.Model, tea.Cmd) {
 		n.SetSize(msg.Width, msg.Height)
 		switch n.activeView {
 		case notesViewFiles:
-			cmds = append(cmds, n.updateFilesCmd)
+			cmds = append(cmds, n.loadFilesCmd())
 		case notesViewContent:
 			if n.currentContent.content != "" {
 				m, cmd := n.code.Update(msg)
@@ -433,14 +488,6 @@ func (n *Notes) Update(msg tea.Msg) (common.Model, tea.Cmd) {
 				if cmd != nil {
 					cmds = append(cmds, cmd)
 				}
-			}
-		}
-	case spinner.TickMsg:
-		if n.activeView == notesViewLoading && n.spinner.ID() == msg.ID {
-			s, cmd := n.spinner.Update(msg)
-			n.spinner = s
-			if cmd != nil {
-				cmds = append(cmds, cmd)
 			}
 		}
 	}
@@ -464,8 +511,6 @@ func (n *Notes) Update(msg tea.Msg) (common.Model, tea.Cmd) {
 // View implements tea.Model.
 func (n *Notes) View() string {
 	switch n.activeView {
-	case notesViewLoading:
-		return renderLoading(n.common, n.spinner)
 	case notesViewFiles:
 		return n.selector.View()
 	case notesViewContent:
@@ -477,7 +522,7 @@ func (n *Notes) View() string {
 
 // SpinnerID implements common.TabComponent.
 func (n *Notes) SpinnerID() int {
-	return n.spinner.ID()
+	return 0 // No spinner used
 }
 
 // StatusBarValue returns the status bar value.
@@ -501,57 +546,11 @@ func (n *Notes) StatusBarInfo() string {
 	}
 }
 
-func (n *Notes) updateFilesCmd() tea.Msg {
-	files := make([]selector.IdentifiableItem, 0)
-	dirs := make([]selector.IdentifiableItem, 0)
-
-	if n.userPath == "" {
-		return FileItemsMsg{}
-	}
-
-	currentPath := filepath.Join(n.userPath, n.path)
-
-	entries, err := os.ReadDir(currentPath)
-	if err != nil {
-		return FileItemsMsg{}
-	}
-
-	for _, entry := range entries {
-		name := entry.Name()
-		// Skip hidden files/directories (starting with .)
-		if strings.HasPrefix(name, ".") {
-			continue
-		}
-
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-
-		item := NotesFileItem{
-			name:  name,
-			path:  filepath.Join(currentPath, name),
-			isDir: entry.IsDir(),
-			size:  info.Size(),
-			mode:  info.Mode(),
-		}
-
-		if entry.IsDir() {
-			dirs = append(dirs, item)
-		} else {
-			files = append(files, item)
-		}
-	}
-
-	// Sort: directories first, then files, alphabetically within each group
-	return FileItemsMsg(append(dirs, files...))
-}
-
 func (n *Notes) selectDirCmd() tea.Msg {
 	if n.currentItem != nil && n.currentItem.isDir {
 		n.lastSelected = append(n.lastSelected, n.selector.Index())
 		n.cursor = 0
-		return n.updateFilesCmd()
+		return n.updateFilesMsg()
 	}
 	return common.ErrorMsg(errNoFileSelected)
 }
@@ -592,17 +591,13 @@ func (n *Notes) deselectItemCmd() tea.Cmd {
 	n.cursor = index
 	n.activeView = notesViewFiles
 	n.code.UseGlamour = false
-	return n.updateFilesCmd
+	return n.loadFilesCmd()
 }
 
 func (n *Notes) setItems(items []selector.IdentifiableItem) tea.Cmd {
 	return func() tea.Msg {
 		return FileItemsMsg(items)
 	}
-}
-
-func renderLoading(c common.Common, s spinner.Model) string {
-	return c.Styles.Spinner.Copy().MarginTop(2).Render(s.View() + " Loading...")
 }
 
 func copyCmd(content string, msg string) tea.Cmd {
