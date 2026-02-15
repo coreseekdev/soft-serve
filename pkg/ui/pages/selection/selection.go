@@ -309,7 +309,9 @@ func (s *Selection) View() string {
 		// Show path header for Notes if there's a path
 		pathHeader := ""
 		if path := s.notes.Path(); path != "" {
-			pathHeader = s.common.Styles.Repo.HeaderName.Render("~/"+path) + "\n"
+			pathHeader = s.common.Styles.Repo.HeaderName.
+				PaddingLeft(2).
+				Render("~/"+path) + "\n"
 		}
 		ss := lipgloss.NewStyle().
 			Width(s.common.Width - wm).
