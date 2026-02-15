@@ -378,10 +378,12 @@ func (n *Notes) updateFilesMsg() FileItemsMsg {
 
 	n.common.Logger.Debugf("notes: reading directory %s, found %d entries", currentPath, len(entries))
 
+	visibleCount := 0
 	for _, entry := range entries {
 		name := entry.Name()
 		// Skip hidden files/directories (starting with .)
 		if strings.HasPrefix(name, ".") {
+			n.common.Logger.Debugf("notes: skipping hidden entry: %s", name)
 			continue
 		}
 
@@ -389,6 +391,9 @@ func (n *Notes) updateFilesMsg() FileItemsMsg {
 		if err != nil {
 			continue
 		}
+
+		visibleCount++
+		n.common.Logger.Debugf("notes: adding entry: %s (isDir=%v)", name, entry.IsDir())
 
 		item := NotesFileItem{
 			name:  name,
@@ -404,6 +409,8 @@ func (n *Notes) updateFilesMsg() FileItemsMsg {
 			files = append(files, item)
 		}
 	}
+
+	n.common.Logger.Debugf("notes: total visible entries: %d (dirs=%d, files=%d)", visibleCount, len(dirs), len(files))
 
 	// Sort: directories first, then files, alphabetically within each group
 	return FileItemsMsg(append(dirs, files...))

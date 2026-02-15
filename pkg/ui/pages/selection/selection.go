@@ -237,6 +237,20 @@ func (s *Selection) Update(msg tea.Msg) (common.Model, tea.Cmd) {
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case notes.FileItemsMsg:
+		// Forward Notes file items to the Notes component
+		np, cmd := s.notes.Update(msg)
+		s.notes = np.(*notes.Notes)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case notes.FileContentMsg:
+		// Forward Notes file content to the Notes component
+		np, cmd := s.notes.Update(msg)
+		s.notes = np.(*notes.Notes)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case tea.KeyPressMsg, tea.MouseMsg:
 		switch msg := msg.(type) {
 		case tea.KeyPressMsg:
