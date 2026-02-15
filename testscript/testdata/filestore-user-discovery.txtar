@@ -1,0 +1,48 @@
+# vi: set ft=conf
+
+# FileStore user discovery test
+# This test verifies that users are loaded from the users directory
+
+# convert crlf to lf on windows
+[windows] dos2unix list1.txt list2.txt user1_info.txt
+
+# Create users directory with a test user
+mkdir -p users/testuser/.ssh
+writefile users/testuser/.ssh/id_ed25519.pub $USER1_AUTHORIZED_KEY
+
+# start soft serve with filestore (default)
+exec soft serve &
+ensureserverrunning SSH_PORT
+
+# list users - should include testuser
+soft user list
+cmpenv stdout list1.txt
+
+# get user info
+soft user info testuser
+cmpenv stdout user1_info.txt
+
+# create another user via command
+soft user create newuser --key "$USER2_AUTHORIZED_KEY"
+soft user list
+cmpenv stdout list2.txt
+
+# verify new user directory was created
+[!windows] exists users/newuser/.ssh/id_key_0.pub
+
+# stop the server
+[windows] stopserver
+[windows] ! stderr .
+
+-- list1.txt --
+admin
+testuser
+-- list2.txt --
+admin
+newuser
+testuser
+-- user1_info.txt --
+Username: testuser
+Admin: false
+Public keys:
+  $USER1_AUTHORIZED_KEY

@@ -1,0 +1,50 @@
+# vi: set ft=conf
+
+# FileStore repository discovery test
+# This test verifies that repositories are auto-discovered
+
+# convert crlf to lf on windows
+[windows] dos2unix list1.txt list2.txt
+
+# Create bare repository
+mkdir -p test-repo.git/objects test-repo.git/refs/heads
+writefile test-repo.git/HEAD 'ref: refs/heads/main'
+writefile test-repo.git/config '[core]
+	repositoryformatversion = 0
+	bare = true
+'
+
+# Create normal repository
+mkdir -p normal-repo/.git/objects normal-repo/.git/refs/heads
+writefile normal-repo/.git/HEAD 'ref: refs/heads/main'
+
+# Create a non-git directory (should be ignored)
+mkdir -p not-a-repo
+
+# start soft serve
+exec soft serve &
+ensureserverrunning SSH_PORT
+
+# list repos - should discover both repos
+soft repo list
+cmpenv stdout list1.txt
+
+# create new repo
+soft repo create new-repo
+soft repo list
+cmpenv stdout list2.txt
+
+# verify new repo directory was created
+exists new-repo.git/HEAD
+
+# stop the server
+[windows] stopserver
+[windows] ! stderr .
+
+-- list1.txt --
+normal-repo
+test-repo
+-- list2.txt --
+new-repo
+normal-repo
+test-repo

@@ -1,0 +1,30 @@
+# vi: set ft=conf
+
+# FileStore custom user home test
+# This test verifies that SOFT_SERVE_USER_HOME works correctly
+
+# convert crlf to lf on windows
+[windows] dos2unix list1.txt
+
+# Create custom users directory
+mkdir -p custom-users/customuser/.ssh
+writefile custom-users/customuser/.ssh/id_ed25519.pub $USER1_AUTHORIZED_KEY
+
+# Set custom user home
+env SOFT_SERVE_USER_HOME=custom-users
+
+# start soft serve
+exec soft serve &
+ensureserverrunning SSH_PORT
+
+# list users - should include customuser from custom directory
+soft user list
+cmpenv stdout list1.txt
+
+# stop the server
+[windows] stopserver
+[windows] ! stderr .
+
+-- list1.txt --
+admin
+customuser

@@ -1,7 +1,4 @@
-//go:build ignore
-
-// This file is replaced by serve_filestore.go and serve_dbstore.go
-// It is kept for reference only.
+//go:build filestore || !dbstore
 
 package serve
 
@@ -20,8 +17,6 @@ import (
 	"github.com/charmbracelet/soft-serve/cmd"
 	"github.com/charmbracelet/soft-serve/pkg/backend"
 	"github.com/charmbracelet/soft-serve/pkg/config"
-	"github.com/charmbracelet/soft-serve/pkg/db"
-	"github.com/charmbracelet/soft-serve/pkg/db/migrate"
 	"github.com/spf13/cobra"
 )
 
@@ -70,10 +65,7 @@ var (
 				os.MkdirAll(logPath, os.ModePerm) //nolint: errcheck
 			}
 
-			db := db.FromContext(ctx)
-			if err := migrate.Migrate(ctx, db); err != nil {
-				return fmt.Errorf("migration error: %w", err)
-			}
+			// FileStore: no database migration needed
 
 			s, err := NewServer(ctx)
 			if err != nil {

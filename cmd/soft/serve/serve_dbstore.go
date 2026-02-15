@@ -1,7 +1,4 @@
-//go:build ignore
-
-// This file is replaced by serve_filestore.go and serve_dbstore.go
-// It is kept for reference only.
+//go:build dbstore
 
 package serve
 
@@ -70,6 +67,7 @@ var (
 				os.MkdirAll(logPath, os.ModePerm) //nolint: errcheck
 			}
 
+			// DBStore: run migrations
 			db := db.FromContext(ctx)
 			if err := migrate.Migrate(ctx, db); err != nil {
 				return fmt.Errorf("migration error: %w", err)

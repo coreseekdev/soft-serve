@@ -1,7 +1,4 @@
-//go:build ignore
-
-// This file is replaced by cmd_filestore.go and cmd_dbstore.go
-// It is kept for reference only.
+//go:build filestore || !dbstore
 
 package cmd
 
@@ -14,14 +11,13 @@ import (
 
 	"github.com/charmbracelet/soft-serve/pkg/backend"
 	"github.com/charmbracelet/soft-serve/pkg/config"
-	"github.com/charmbracelet/soft-serve/pkg/db"
 	"github.com/charmbracelet/soft-serve/pkg/hooks"
 	"github.com/charmbracelet/soft-serve/pkg/store"
-	"github.com/charmbracelet/soft-serve/pkg/store/database"
+	"github.com/charmbracelet/soft-serve/pkg/store/file"
 	"github.com/spf13/cobra"
 )
 
-// InitBackendContext initializes the backend context.
+// InitBackendContext initializes the backend context for FileStore.
 func InitBackendContext(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 	cfg := config.FromContext(ctx)
@@ -30,15 +26,26 @@ func InitBackendContext(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("create data directory: %w", err)
 		}
 	}
-	dbx, err := db.Open(ctx, cfg.DB.Driver, cfg.DB.DataSource)
-	if err != nil {
-		return fmt.Errorf("open database: %w", err)
+
+	// Create necessary directories
+	dirs := []string{
+		cfg.DataPath,
+		file.GetUsersPath(cfg),
+	}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("create directory %s: %w", dir, err)
+		}
 	}
 
-	ctx = db.WithContext(ctx, dbx)
-	dbstore := database.New(ctx, dbx)
-	ctx = store.WithContext(ctx, dbstore)
-	be := backend.New(ctx, cfg, dbx, dbstore)
+	// Initialize FileStore
+	filestore, err := file.NewStore(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("initialize file store: %w", err)
+	}
+
+	ctx = store.WithContext(ctx, filestore)
+	be := backend.New(ctx, cfg, nil, filestore)
 	ctx = backend.WithContext(ctx, be)
 
 	cmd.SetContext(ctx)
@@ -46,16 +53,9 @@ func InitBackendContext(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-// CloseDBContext closes the database context.
+// CloseDBContext closes the database context (no-op for FileStore).
 func CloseDBContext(cmd *cobra.Command, _ []string) error {
-	ctx := cmd.Context()
-	dbx := db.FromContext(ctx)
-	if dbx != nil {
-		if err := dbx.Close(); err != nil {
-			return fmt.Errorf("close database: %w", err)
-		}
-	}
-
+	// No database to close for FileStore
 	return nil
 }
 

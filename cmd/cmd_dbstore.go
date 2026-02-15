@@ -1,7 +1,4 @@
-//go:build ignore
-
-// This file is replaced by cmd_filestore.go and cmd_dbstore.go
-// It is kept for reference only.
+//go:build dbstore
 
 package cmd
 
@@ -21,7 +18,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// InitBackendContext initializes the backend context.
+// InitBackendContext initializes the backend context for DBStore.
 func InitBackendContext(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 	cfg := config.FromContext(ctx)

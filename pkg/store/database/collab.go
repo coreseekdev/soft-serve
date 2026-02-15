@@ -1,3 +1,6 @@
+//go:build dbstore
+
+
 package database
 
 import (
