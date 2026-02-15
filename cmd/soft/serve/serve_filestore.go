@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/soft-serve/cmd"
 	"github.com/charmbracelet/soft-serve/pkg/backend"
 	"github.com/charmbracelet/soft-serve/pkg/config"
+	"github.com/charmbracelet/soft-serve/pkg/store/file"
 	"github.com/spf13/cobra"
 )
 
@@ -41,6 +42,16 @@ var (
 				if err := cfg.WriteConfig(); err != nil {
 					return fmt.Errorf("write config file: %w", err)
 				}
+			}
+
+			// In filestore mode, use consistent SSH key paths in ~/.ssh
+			// This ensures the same host key is used regardless of which directory
+			// soft-serve is started from
+			if sshKeyPath := file.GetSSHKeyPath(); sshKeyPath != "" {
+				cfg.SSH.KeyPath = sshKeyPath
+			}
+			if sshClientKeyPath := file.GetSSHClientKeyPath(); sshClientKeyPath != "" {
+				cfg.SSH.ClientKeyPath = sshClientKeyPath
 			}
 
 			if err := cfg.ParseEnv(); err != nil {

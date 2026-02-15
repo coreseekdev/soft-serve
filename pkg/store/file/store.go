@@ -181,6 +181,37 @@ func GetUsersPath(cfg *config.Config) string {
 	return filepath.Join(cfg.DataPath, "users")
 }
 
+// GetSSHKeyPath returns the path to the SSH host key for filestore mode.
+// In filestore mode, we use a consistent location in ~/.ssh to avoid
+// different host keys when starting soft-serve from different directories.
+// It first checks the SOFT_SERVE_SSH_KEY_PATH environment variable,
+// then falls back to ~/.ssh/soft_serve_host_ed25519.
+func GetSSHKeyPath() string {
+	if path := os.Getenv("SOFT_SERVE_SSH_KEY_PATH"); path != "" {
+		return expandPath(path)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		// Fallback to DataPath if we can't get home directory
+		return ""
+	}
+	return filepath.Join(home, ".ssh", "soft_serve_host_ed25519")
+}
+
+// GetSSHClientKeyPath returns the path to the SSH client key for filestore mode.
+// It first checks the SOFT_SERVE_SSH_CLIENT_KEY_PATH environment variable,
+// then falls back to ~/.ssh/soft_serve_client_ed25519.
+func GetSSHClientKeyPath() string {
+	if path := os.Getenv("SOFT_SERVE_SSH_CLIENT_KEY_PATH"); path != "" {
+		return expandPath(path)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".ssh", "soft_serve_client_ed25519")
+}
+
 // expandPath expands ~ and environment variables in a path.
 func expandPath(path string) string {
 	if path == "" {
