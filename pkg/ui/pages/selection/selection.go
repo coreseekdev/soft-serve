@@ -1,7 +1,6 @@
 package selection
 
 import (
-	"fmt"
 	"sort"
 
 	"charm.land/bubbles/v2/key"
@@ -9,11 +8,11 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/soft-serve/pkg/access"
-	"github.com/charmbracelet/soft-serve/pkg/backend"
 	"github.com/charmbracelet/soft-serve/pkg/ui/common"
-	"github.com/charmbracelet/soft-serve/pkg/ui/components/code"
 	"github.com/charmbracelet/soft-serve/pkg/ui/components/selector"
 	"github.com/charmbracelet/soft-serve/pkg/ui/components/tabs"
+	"github.com/charmbracelet/soft-serve/pkg/ui/pages/me"
+	"github.com/charmbracelet/soft-serve/pkg/ui/pages/message"
 )
 
 const (
@@ -24,22 +23,25 @@ type pane int
 
 const (
 	selectorPane pane = iota
-	readmePane
+	messagePane
+	mePane
 	lastPane
 )
 
 func (p pane) String() string {
 	return []string{
 		"Repositories",
-		"About",
+		"Message",
+		"Me",
 	}[p]
 }
 
 // Selection is the model for the selection screen/page.
 type Selection struct {
 	common     common.Common
-	readme     *code.Code
 	selector   *selector.Selector
+	message    *message.Message
+	me         *me.Me
 	activePane pane
 	tabs       *tabs.Tabs
 }
@@ -47,7 +49,7 @@ type Selection struct {
 // New creates a new selection model.
 func New(c common.Common) *Selection {
 	ts := make([]string, lastPane)
-	for i, b := range []pane{selectorPane, readmePane} {
+	for i, b := range []pane{selectorPane, messagePane, mePane} {
 		ts[i] = b.String()
 	}
 	t := tabs.New(c, ts)
@@ -61,10 +63,6 @@ func New(c common.Common) *Selection {
 		activePane: selectorPane, // start with the selector focused
 		tabs:       t,
 	}
-	readme := code.New(c, "", "")
-	readme.UseGlamour = true
-	readme.NoContentStyle = c.Styles.NoContent.
-		SetString(defaultNoContent)
 	selector := selector.New(c,
 		[]selector.IdentifiableItem{},
 		NewItemDelegate(&c, &sel.activePane))
@@ -73,7 +71,8 @@ func New(c common.Common) *Selection {
 	selector.SetShowStatusBar(false)
 	selector.DisableQuitKeybindings()
 	sel.selector = selector
-	sel.readme = readme
+	sel.message = message.New(c)
+	sel.me = me.New(c)
 	return sel
 }
 
@@ -99,7 +98,8 @@ func (s *Selection) SetSize(width, height int) {
 	wm, hm := s.getMargins()
 	s.tabs.SetSize(width, height-hm)
 	s.selector.SetSize(width-wm, height-hm)
-	s.readme.SetSize(width-wm, height-hm-1) // -1 for readme status line
+	s.message.SetSize(width-wm, height-hm)
+	s.me.SetSize(width-wm, height-hm)
 }
 
 // IsFiltering returns true if the selector is currently filtering.
@@ -136,20 +136,6 @@ func (s *Selection) FullHelp() [][]key.Binding {
 		},
 	}
 	switch s.activePane {
-	case readmePane:
-		k := s.readme.KeyMap
-		b = append(b, []key.Binding{
-			k.PageDown,
-			k.PageUp,
-		})
-		b = append(b, []key.Binding{
-			k.HalfPageDown,
-			k.HalfPageUp,
-		})
-		b = append(b, []key.Binding{
-			k.Down,
-			k.Up,
-		})
 	case selectorPane:
 		copyKey := s.common.KeyMap.Copy
 		copyKey.SetHelp("c", "copy command")
@@ -176,13 +162,16 @@ func (s *Selection) FullHelp() [][]key.Binding {
 			k.CancelWhileFiltering,
 			k.AcceptWhileFiltering,
 		})
+	case messagePane:
+		b = append(b, s.message.ShortHelp())
+	case mePane:
+		b = append(b, s.me.ShortHelp())
 	}
 	return b
 }
 
 // Init implements tea.Model.
 func (s *Selection) Init() tea.Cmd {
-	var readmeCmd tea.Cmd
 	cfg := s.common.Config()
 	if cfg == nil {
 		return nil
@@ -201,15 +190,6 @@ func (s *Selection) Init() tea.Cmd {
 	}
 	sortedItems := make(Items, 0)
 	for _, r := range repos {
-		if r.Name() == ".soft-serve" {
-			readme, path, err := backend.Readme(r, nil)
-			if err != nil {
-				continue
-			}
-
-			readmeCmd = s.readme.SetContent(readme, path)
-		}
-
 		if r.IsHidden() {
 			continue
 		}
@@ -231,7 +211,8 @@ func (s *Selection) Init() tea.Cmd {
 	return tea.Batch(
 		s.selector.Init(),
 		s.selector.SetItems(items),
-		readmeCmd,
+		s.message.Init(),
+		s.me.Init(),
 	)
 }
 
@@ -240,13 +221,19 @@ func (s *Selection) Update(msg tea.Msg) (common.Model, tea.Cmd) {
 	cmds := make([]tea.Cmd, 0)
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		r, cmd := s.readme.Update(msg)
-		s.readme = r.(*code.Code)
+		s.SetSize(msg.Width, msg.Height)
+		m, cmd := s.selector.Update(msg)
+		s.selector = m.(*selector.Selector)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-		m, cmd := s.selector.Update(msg)
-		s.selector = m.(*selector.Selector)
+		mp, cmd := s.message.Update(msg)
+		s.message = mp.(*message.Message)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		mp2, cmd := s.me.Update(msg)
+		s.me = mp2.(*me.Me)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
@@ -267,15 +254,21 @@ func (s *Selection) Update(msg tea.Msg) (common.Model, tea.Cmd) {
 		s.activePane = pane(msg)
 	}
 	switch s.activePane {
-	case readmePane:
-		r, cmd := s.readme.Update(msg)
-		s.readme = r.(*code.Code)
-		if cmd != nil {
-			cmds = append(cmds, cmd)
-		}
 	case selectorPane:
 		m, cmd := s.selector.Update(msg)
 		s.selector = m.(*selector.Selector)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case messagePane:
+		mp, cmd := s.message.Update(msg)
+		s.message = mp.(*message.Message)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case mePane:
+		mp, cmd := s.me.Update(msg)
+		s.me = mp.(*me.Me)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
@@ -293,19 +286,16 @@ func (s *Selection) View() string {
 			Width(s.common.Width - wm).
 			Height(s.common.Height - hm)
 		view = ss.Render(s.selector.View())
-	case readmePane:
-		rs := lipgloss.NewStyle().
-			Height(s.common.Height - hm)
-		status := fmt.Sprintf("☰ %.f%%", s.readme.ScrollPercent()*100)
-		readmeStatus := lipgloss.NewStyle().
-			Align(lipgloss.Right).
+	case messagePane:
+		ss := lipgloss.NewStyle().
 			Width(s.common.Width - wm).
-			Foreground(s.common.Styles.InactiveBorderColor).
-			Render(status)
-		view = rs.Render(lipgloss.JoinVertical(lipgloss.Left,
-			s.readme.View(),
-			readmeStatus,
-		))
+			Height(s.common.Height - hm)
+		view = ss.Render(s.message.View())
+	case mePane:
+		ss := lipgloss.NewStyle().
+			Width(s.common.Width - wm).
+			Height(s.common.Height - hm)
+		view = ss.Render(s.me.View())
 	}
 	if s.activePane != selectorPane || s.FilterState() != list.Filtering {
 		tabs := s.common.Styles.Tabs.Render(s.tabs.View())

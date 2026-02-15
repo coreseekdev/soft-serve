@@ -139,6 +139,21 @@ type JobsConfig struct {
 	MirrorPull string `env:"MIRROR_PULL" yaml:"mirror_pull"`
 }
 
+// ChatConfig is the configuration for the chat system.
+type ChatConfig struct {
+	// Enabled toggles the chat system on/off
+	Enabled bool `env:"ENABLED" yaml:"enabled"`
+
+	// DataPath is the path to the chat data directory.
+	DataPath string `env:"DATA_PATH" yaml:"data_path"`
+
+	// DefaultHistoryDays is the default number of days to show in history.
+	DefaultHistoryDays int `env:"DEFAULT_HISTORY_DAYS" yaml:"default_history_days"`
+
+	// Users is a comma-separated list of allowed chat users.
+	Users string `env:"USERS" yaml:"users"`
+}
+
 // Config is the configuration for Soft Serve.
 type Config struct {
 	// Name is the name of the server.
@@ -167,6 +182,9 @@ type Config struct {
 
 	// Jobs is the configuration for cron jobs
 	Jobs JobsConfig `envPrefix:"JOBS_" yaml:"jobs"`
+
+	// Chat is the configuration for the chat system.
+	Chat ChatConfig `envPrefix:"CHAT_" yaml:"chat"`
 
 	// InitialAdminKeys is a list of public keys that will be added to the list of admins.
 	InitialAdminKeys []string `env:"INITIAL_ADMIN_KEYS" envSeparator:"\n" yaml:"initial_admin_keys"`
@@ -220,6 +238,10 @@ func (c *Config) Environ() []string {
 		fmt.Sprintf("SOFT_SERVE_LFS_ENABLED=%t", c.LFS.Enabled),
 		fmt.Sprintf("SOFT_SERVE_LFS_SSH_ENABLED=%t", c.LFS.SSHEnabled),
 		fmt.Sprintf("SOFT_SERVE_JOBS_MIRROR_PULL=%s", c.Jobs.MirrorPull),
+		fmt.Sprintf("SOFT_SERVE_CHAT_ENABLED=%t", c.Chat.Enabled),
+		fmt.Sprintf("SOFT_SERVE_CHAT_DATA_PATH=%s", c.Chat.DataPath),
+		fmt.Sprintf("SOFT_SERVE_CHAT_DEFAULT_HISTORY_DAYS=%d", c.Chat.DefaultHistoryDays),
+		fmt.Sprintf("SOFT_SERVE_CHAT_USERS=%s", c.Chat.Users),
 	}...)
 
 	return envs
@@ -395,6 +417,12 @@ func DefaultConfig() *Config {
 		},
 		Jobs: JobsConfig{
 			MirrorPull: "@every 10m",
+		},
+		Chat: ChatConfig{
+			Enabled:            false,
+			DataPath:           filepath.Join("chat"),
+			DefaultHistoryDays: 7,
+			Users:              "",
 		},
 	}
 }
