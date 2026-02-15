@@ -441,9 +441,14 @@ func (n *Notes) Update(msg tea.Msg) (common.Model, tea.Cmd) {
 	case FileContentMsg:
 		n.activeView = notesViewContent
 		n.currentContent = msg
-		// Don't use glamour for markdown to ensure line numbers are shown
-		n.code.UseGlamour = false
-		n.code.ShowLineNumber = true
+		// Use glamour for markdown files, otherwise show line numbers
+		if common.IsFileMarkdown(n.currentContent.content, n.currentContent.ext) {
+			n.code.UseGlamour = true
+			n.code.ShowLineNumber = false
+		} else {
+			n.code.UseGlamour = false
+			n.code.ShowLineNumber = true
+		}
 		cmds = append(cmds, n.code.SetContent(msg.content, msg.ext))
 		n.code.GotoTop()
 	case selector.SelectMsg:
