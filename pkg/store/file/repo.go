@@ -41,7 +41,55 @@ type webhookMeta struct {
 
 // discoverRepos discovers repositories in the data directory.
 // Supports both bare repos (xxx.git/) and normal repos (xxx/).
+// Also checks if the data directory itself is a git repository.
 func (s *FileStore) discoverRepos() error {
+	// First, check if reposPath itself is a git repository
+	if isBare, isRepo := s.checkRepo(s.reposPath); isRepo {
+		// Use the directory name as repo name
+		repoName := filepath.Base(s.reposPath)
+		// Get directory modification time
+		info, err := os.Stat(s.reposPath)
+		var modTime time.Time
+		if err != nil {
+			modTime = time.Now()
+		} else {
+			modTime = info.ModTime()
+		}
+
+		// Load metadata if exists
+		meta := s.loadRepoMeta(s.reposPath)
+
+		s.repos[repoName] = &repoInfo{
+			name:        repoName,
+			path:        s.reposPath,
+			description: meta.Description,
+			private:     meta.Private,
+			hidden:      meta.Hidden,
+			mirror:      meta.Mirror,
+			projectName: meta.ProjectName,
+			collabs:     make(map[string]string),
+			webhooks:    make([]webhookInfo, 0),
+			modTime:     modTime,
+		}
+
+		// Load collaborators from metadata
+		for _, c := range meta.Collaborators {
+			s.repos[repoName].collabs[c.Username] = c.Access
+		}
+
+		// Load webhooks from metadata
+		for _, w := range meta.Webhooks {
+			s.repos[repoName].webhooks = append(s.repos[repoName].webhooks, webhookInfo{
+				url:    w.URL,
+				secret: w.Secret,
+				events: w.Events,
+				active: w.Active,
+			})
+		}
+
+		_ = isBare // Could be used for logging
+	}
+
 	entries, err := os.ReadDir(s.reposPath)
 	if err != nil {
 		return err
