@@ -11,8 +11,8 @@ import (
 	"github.com/charmbracelet/soft-serve/pkg/ui/common"
 	"github.com/charmbracelet/soft-serve/pkg/ui/components/selector"
 	"github.com/charmbracelet/soft-serve/pkg/ui/components/tabs"
-	"github.com/charmbracelet/soft-serve/pkg/ui/pages/me"
-	"github.com/charmbracelet/soft-serve/pkg/ui/pages/message"
+	"github.com/charmbracelet/soft-serve/pkg/ui/pages/messages"
+	"github.com/charmbracelet/soft-serve/pkg/ui/pages/notes"
 )
 
 const (
@@ -23,16 +23,16 @@ type pane int
 
 const (
 	selectorPane pane = iota
-	messagePane
-	mePane
+	messagesPane
+	notesPane
 	lastPane
 )
 
 func (p pane) String() string {
 	return []string{
 		"Repositories",
-		"Message",
-		"Me",
+		"Messages",
+		"Notes",
 	}[p]
 }
 
@@ -40,8 +40,8 @@ func (p pane) String() string {
 type Selection struct {
 	common     common.Common
 	selector   *selector.Selector
-	message    *message.Message
-	me         *me.Me
+	messages   *messages.Messages
+	notes      *notes.Notes
 	activePane pane
 	tabs       *tabs.Tabs
 }
@@ -49,7 +49,7 @@ type Selection struct {
 // New creates a new selection model.
 func New(c common.Common) *Selection {
 	ts := make([]string, lastPane)
-	for i, b := range []pane{selectorPane, messagePane, mePane} {
+	for i, b := range []pane{selectorPane, messagesPane, notesPane} {
 		ts[i] = b.String()
 	}
 	t := tabs.New(c, ts)
@@ -71,8 +71,8 @@ func New(c common.Common) *Selection {
 	selector.SetShowStatusBar(false)
 	selector.DisableQuitKeybindings()
 	sel.selector = selector
-	sel.message = message.New(c)
-	sel.me = me.New(c)
+	sel.messages = messages.New(c)
+	sel.notes = notes.New(c)
 	return sel
 }
 
@@ -98,8 +98,8 @@ func (s *Selection) SetSize(width, height int) {
 	wm, hm := s.getMargins()
 	s.tabs.SetSize(width, height-hm)
 	s.selector.SetSize(width-wm, height-hm)
-	s.message.SetSize(width-wm, height-hm)
-	s.me.SetSize(width-wm, height-hm)
+	s.messages.SetSize(width-wm, height-hm)
+	s.notes.SetSize(width-wm, height-hm)
 }
 
 // IsFiltering returns true if the selector is currently filtering.
@@ -162,10 +162,10 @@ func (s *Selection) FullHelp() [][]key.Binding {
 			k.CancelWhileFiltering,
 			k.AcceptWhileFiltering,
 		})
-	case messagePane:
-		b = append(b, s.message.ShortHelp())
-	case mePane:
-		b = append(b, s.me.ShortHelp())
+	case messagesPane:
+		b = append(b, s.messages.ShortHelp())
+	case notesPane:
+		b = append(b, s.notes.ShortHelp())
 	}
 	return b
 }
@@ -211,8 +211,8 @@ func (s *Selection) Init() tea.Cmd {
 	return tea.Batch(
 		s.selector.Init(),
 		s.selector.SetItems(items),
-		s.message.Init(),
-		s.me.Init(),
+		s.messages.Init(),
+		s.notes.Init(),
 	)
 }
 
@@ -227,13 +227,13 @@ func (s *Selection) Update(msg tea.Msg) (common.Model, tea.Cmd) {
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-		mp, cmd := s.message.Update(msg)
-		s.message = mp.(*message.Message)
+		mp, cmd := s.messages.Update(msg)
+		s.messages = mp.(*messages.Messages)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-		mp2, cmd := s.me.Update(msg)
-		s.me = mp2.(*me.Me)
+		np, cmd := s.notes.Update(msg)
+		s.notes = np.(*notes.Notes)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
@@ -260,15 +260,15 @@ func (s *Selection) Update(msg tea.Msg) (common.Model, tea.Cmd) {
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-	case messagePane:
-		mp, cmd := s.message.Update(msg)
-		s.message = mp.(*message.Message)
+	case messagesPane:
+		mp, cmd := s.messages.Update(msg)
+		s.messages = mp.(*messages.Messages)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-	case mePane:
-		mp, cmd := s.me.Update(msg)
-		s.me = mp.(*me.Me)
+	case notesPane:
+		np, cmd := s.notes.Update(msg)
+		s.notes = np.(*notes.Notes)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
@@ -286,16 +286,16 @@ func (s *Selection) View() string {
 			Width(s.common.Width - wm).
 			Height(s.common.Height - hm)
 		view = ss.Render(s.selector.View())
-	case messagePane:
+	case messagesPane:
 		ss := lipgloss.NewStyle().
 			Width(s.common.Width - wm).
 			Height(s.common.Height - hm)
-		view = ss.Render(s.message.View())
-	case mePane:
+		view = ss.Render(s.messages.View())
+	case notesPane:
 		ss := lipgloss.NewStyle().
 			Width(s.common.Width - wm).
 			Height(s.common.Height - hm)
-		view = ss.Render(s.me.View())
+		view = ss.Render(s.notes.View())
 	}
 	if s.activePane != selectorPane || s.FilterState() != list.Filtering {
 		tabs := s.common.Styles.Tabs.Render(s.tabs.View())

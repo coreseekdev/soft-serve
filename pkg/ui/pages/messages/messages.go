@@ -1,4 +1,4 @@
-package message
+package messages
 
 import (
 	"charm.land/bubbles/v2/key"
@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	placeholderContent = `# Message
+	placeholderContent = `# Messages
 
 Coming soon...
 
@@ -19,34 +19,34 @@ Stay tuned!
 `
 )
 
-// Message is the model for the Message page (placeholder for chat functionality).
-type Message struct {
-	common   common.Common
-	code     *code.Code
+// Messages is the model for the Messages page (placeholder for chat functionality).
+type Messages struct {
+	common common.Common
+	code   *code.Code
 }
 
-// New creates a new Message model.
-func New(c common.Common) *Message {
-	m := &Message{
+// New creates a new Messages model.
+func New(c common.Common) *Messages {
+	m := &Messages{
 		common: c,
 	}
 
 	code := code.New(c, "", "")
 	code.UseGlamour = true
-	code.NoContentStyle = c.Styles.NoContent.SetString("Message feature coming soon...")
+	code.NoContentStyle = c.Styles.NoContent.SetString("Messages feature coming soon...")
 	m.code = code
 
 	return m
 }
 
 // SetSize implements common.Component.
-func (m *Message) SetSize(width, height int) {
+func (m *Messages) SetSize(width, height int) {
 	m.common.SetSize(width, height)
 	m.code.SetSize(width, height-2)
 }
 
 // ShortHelp implements help.KeyMap.
-func (m *Message) ShortHelp() []key.Binding {
+func (m *Messages) ShortHelp() []key.Binding {
 	k := m.code.KeyMap
 	return []key.Binding{
 		m.common.KeyMap.Section,
@@ -56,7 +56,7 @@ func (m *Message) ShortHelp() []key.Binding {
 }
 
 // FullHelp implements help.KeyMap.
-func (m *Message) FullHelp() [][]key.Binding {
+func (m *Messages) FullHelp() [][]key.Binding {
 	k := m.code.KeyMap
 	return [][]key.Binding{
 		{m.common.KeyMap.Section},
@@ -67,13 +67,13 @@ func (m *Message) FullHelp() [][]key.Binding {
 }
 
 // Init implements tea.Model.
-func (m *Message) Init() tea.Cmd {
+func (m *Messages) Init() tea.Cmd {
 	// Set placeholder content with glamour rendering
 	return m.code.SetContent(placeholderContent, "md")
 }
 
 // Update implements tea.Model.
-func (m *Message) Update(msg tea.Msg) (common.Model, tea.Cmd) {
+func (m *Messages) Update(msg tea.Msg) (common.Model, tea.Cmd) {
 	cmds := make([]tea.Cmd, 0)
 
 	switch msg := msg.(type) {
@@ -91,9 +91,9 @@ func (m *Message) Update(msg tea.Msg) (common.Model, tea.Cmd) {
 }
 
 // View implements tea.Model.
-func (m *Message) View() string {
+func (m *Messages) View() string {
 	// Tab indicator
-	tabIndicator := m.common.Styles.TabActive.Render("Message")
+	tabIndicator := m.common.Styles.TabActive.Render("Messages")
 
 	view := lipgloss.JoinVertical(lipgloss.Left,
 		m.common.Styles.Tabs.Render(tabIndicator),
