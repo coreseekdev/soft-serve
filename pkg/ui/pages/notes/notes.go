@@ -311,7 +311,6 @@ func (n *Notes) Init() tea.Cmd {
 
 	if pk == nil {
 		// Anonymous user - no notes directory
-		n.common.Logger.Debug("notes: no public key, showing empty list")
 		n.activeView = notesViewFiles
 		return tea.Batch(n.selector.Init(), n.setItems([]selector.IdentifiableItem{}))
 	}
@@ -319,7 +318,6 @@ func (n *Notes) Init() tea.Cmd {
 	user, err := be.UserByPublicKey(ctx, pk)
 	if err != nil {
 		// User not found in users_path - show empty list
-		n.common.Logger.Debugf("notes: user not found by public key: %v", err)
 		n.activeView = notesViewFiles
 		return tea.Batch(n.selector.Init(), n.setItems([]selector.IdentifiableItem{}))
 	}
@@ -335,12 +333,9 @@ func (n *Notes) Init() tea.Cmd {
 
 	// If userPath is still empty, show empty list
 	if n.userPath == "" {
-		n.common.Logger.Debug("notes: userPath is empty, showing empty list")
 		n.activeView = notesViewFiles
 		return tea.Batch(n.selector.Init(), n.setItems([]selector.IdentifiableItem{}))
 	}
-
-	n.common.Logger.Debugf("notes: userPath set to %s", n.userPath)
 
 	n.path = ""
 	n.currentItem = nil
@@ -371,19 +366,13 @@ func (n *Notes) updateFilesMsg() FileItemsMsg {
 
 	entries, err := os.ReadDir(currentPath)
 	if err != nil {
-		// Log the error for debugging
-		n.common.Logger.Debugf("notes: failed to read directory %s: %v", currentPath, err)
 		return FileItemsMsg{}
 	}
 
-	n.common.Logger.Debugf("notes: reading directory %s, found %d entries", currentPath, len(entries))
-
-	visibleCount := 0
 	for _, entry := range entries {
 		name := entry.Name()
 		// Skip hidden files/directories (starting with .)
 		if strings.HasPrefix(name, ".") {
-			n.common.Logger.Debugf("notes: skipping hidden entry: %s", name)
 			continue
 		}
 
@@ -391,9 +380,6 @@ func (n *Notes) updateFilesMsg() FileItemsMsg {
 		if err != nil {
 			continue
 		}
-
-		visibleCount++
-		n.common.Logger.Debugf("notes: adding entry: %s (isDir=%v)", name, entry.IsDir())
 
 		item := NotesFileItem{
 			name:  name,
@@ -409,8 +395,6 @@ func (n *Notes) updateFilesMsg() FileItemsMsg {
 			files = append(files, item)
 		}
 	}
-
-	n.common.Logger.Debugf("notes: total visible entries: %d (dirs=%d, files=%d)", visibleCount, len(dirs), len(files))
 
 	// Sort: directories first, then files, alphabetically within each group
 	return FileItemsMsg(append(dirs, files...))
@@ -548,6 +532,14 @@ func (n *Notes) StatusBarValue() string {
 		return " "
 	}
 	return p
+}
+
+// StatusBarFileName returns the file name for status bar when viewing content.
+func (n *Notes) StatusBarFileName() string {
+	if n.activeView == notesViewContent && n.currentItem != nil {
+		return n.currentItem.name
+	}
+	return ""
 }
 
 // StatusBarInfo returns the status bar info.
