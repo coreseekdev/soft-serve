@@ -11,6 +11,25 @@ import (
 	"github.com/charmbracelet/soft-serve/pkg/config"
 )
 
+// contextKey is the key type for context values.
+type contextKey struct{}
+
+// chatContextKey is the context key for the chat instance.
+var chatContextKey = contextKey{}
+
+// WithContext returns a new context with the chat instance attached.
+func WithContext(ctx context.Context, c *Chat) context.Context {
+	return context.WithValue(ctx, chatContextKey, c)
+}
+
+// FromContext returns the chat instance from the context.
+func FromContext(ctx context.Context) *Chat {
+	if c, ok := ctx.Value(chatContextKey).(*Chat); ok {
+		return c
+	}
+	return nil
+}
+
 // Chat is the main chat system.
 type Chat struct {
 	mu       sync.RWMutex

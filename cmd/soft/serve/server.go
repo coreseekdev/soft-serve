@@ -10,6 +10,7 @@ import (
 	"charm.land/log/v2"
 
 	"github.com/charmbracelet/soft-serve/pkg/backend"
+	"github.com/charmbracelet/soft-serve/pkg/chat"
 	"github.com/charmbracelet/soft-serve/pkg/config"
 	"github.com/charmbracelet/soft-serve/pkg/cron"
 	"github.com/charmbracelet/soft-serve/pkg/daemon"
@@ -33,6 +34,7 @@ type Server struct {
 	Config      *config.Config
 	Backend     *backend.Backend
 	DB          *db.DB
+	Chat        *chat.Chat
 
 	logger *log.Logger
 	ctx    context.Context
@@ -98,6 +100,15 @@ func NewServer(ctx context.Context) (*Server, error) {
 		srv.HTTPServer.SetTLSConfig(&tls.Config{
 			GetCertificate: srv.CertLoader.GetCertificateFunc(),
 		})
+	}
+
+	// Initialize chat module if enabled
+	if cfg.Chat.Enabled {
+		srv.Chat, err = chat.New(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("create chat: %w", err)
+		}
+		logger.Info("Chat system initialized", "data_path", cfg.Chat.DataPath)
 	}
 
 	return srv, nil
@@ -188,6 +199,12 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.Cron.Stop()
 		return nil
 	})
+	// Shutdown chat if enabled
+	if s.Chat != nil {
+		errg.Go(func() error {
+			return s.Chat.Shutdown(ctx)
+		})
+	}
 	// defer s.DB.Close() // nolint: errcheck
 	return errg.Wait()
 }

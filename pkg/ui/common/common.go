@@ -8,6 +8,7 @@ import (
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/charmbracelet/soft-serve/git"
 	"github.com/charmbracelet/soft-serve/pkg/backend"
+	"github.com/charmbracelet/soft-serve/pkg/chat"
 	"github.com/charmbracelet/soft-serve/pkg/config"
 	"github.com/charmbracelet/soft-serve/pkg/ui/keymap"
 	"github.com/charmbracelet/soft-serve/pkg/ui/styles"
@@ -76,6 +77,11 @@ func (c *Common) Config() *config.Config {
 // Backend returns the Soft Serve backend.
 func (c *Common) Backend() *backend.Backend {
 	return backend.FromContext(c.ctx)
+}
+
+// Chat returns the chat instance.
+func (c *Common) Chat() *chat.Chat {
+	return chat.FromContext(c.ctx)
 }
 
 // Repo returns the repository.

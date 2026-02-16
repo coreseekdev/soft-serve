@@ -119,6 +119,27 @@ func (m *Messages) FullHelp() [][]key.Binding {
 
 // Init implements tea.Model.
 func (m *Messages) Init() tea.Cmd {
+	// Get chat from context
+	if m.common.Chat() != nil {
+		m.chat = m.common.Chat()
+	}
+	// Get user from context
+	if m.common.Backend() != nil && m.common.PublicKey() != nil {
+		user, err := m.common.Backend().UserByPublicKey(m.common.Context(), m.common.PublicKey())
+		if err == nil {
+			m.user = user
+		}
+	}
+
+	// Add welcome message
+	m.addSystemLine("Welcome to Chat!")
+	m.addSystemLine("Type /help for available commands.")
+
+	if m.chat == nil {
+		m.addSystemLine("")
+		m.addSystemLine("Chat is not enabled. Set SOFT_SERVE_CHAT_ENABLED=true to enable.")
+	}
+
 	return tea.Batch(textinput.Blink)
 }
 
