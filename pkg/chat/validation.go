@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	// MaxMessageSize is the maximum allowed message size (4KB)
-	MaxMessageSize = 4096
+	// MaxMessageSize is the maximum allowed message size (32KB)
+	MaxMessageSize = 32768
 	// MaxChannelNameLength is the maximum channel name length
 	MaxChannelNameLength = 64
 	// MaxUsernameLength is the maximum username length

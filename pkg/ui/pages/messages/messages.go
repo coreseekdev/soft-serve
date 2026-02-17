@@ -341,8 +341,8 @@ func (m *Messages) handleSendMsg(input string) (common.Model, tea.Cmd) {
 	// Send message to current channel
 	if m.currentCh != "" {
 		// Validate message content
-		if len(input) > 4096 {
-			m.addSystemLine("Message too large (max 4096 bytes)")
+		if len(input) > 32768 {
+			m.addSystemLine("Message too large (max 32768 bytes)")
 			return m, nil
 		}
 		if strings.TrimSpace(input) == "" {
