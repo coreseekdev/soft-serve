@@ -115,6 +115,17 @@ func (c *Chat) handleCommand(sess *ChatSession, input *ParsedInput) error {
 func (c *Chat) sendChannelMessage(sess *ChatSession, channel, content string) error {
 	user := sess.User()
 
+	// Validate channel name
+	if err := ValidateChannelName(channel); err != nil {
+		return err
+	}
+
+	// Validate and sanitize message content
+	if err := ValidateMessage(content); err != nil {
+		return err
+	}
+	content = SanitizeMessage(content)
+
 	// Ensure channel exists and user is member
 	ch, err := c.GetOrCreateChannel(channel)
 	if err != nil {
@@ -204,6 +215,17 @@ func (c *Chat) sendToCurrentTarget(sess *ChatSession, content string) error {
 
 func (c *Chat) sendDirectMessage(sess *ChatSession, peer, content string) error {
 	user := sess.User()
+
+	// Validate username
+	if err := ValidateUsername(peer); err != nil {
+		return err
+	}
+
+	// Validate and sanitize message content
+	if err := ValidateMessage(content); err != nil {
+		return err
+	}
+	content = SanitizeMessage(content)
 
 	if !c.IsValidUser(peer) {
 		return fmt.Errorf("user not found: %s", peer)

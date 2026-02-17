@@ -340,37 +340,52 @@ func (m *Messages) handleSendMsg(input string) (common.Model, tea.Cmd) {
 
 	// Send message to current channel
 	if m.currentCh != "" {
-		// Generate message ID
-		msgID := m.chat.GenerateMessageID()
+		// Validate message content
+		if len(input) > 4096 {
+			m.addSystemLine("Message too large (max 4096 bytes)")
+			return m, nil
+		}
+		if strings.TrimSpace(input) == "" {
+			return m, nil
+		}
 
-		// Add local echo
-		m.addLine(ChatLine{
-			Timestamp: time.Now(),
-			Sender:    username,
-			Content:   input,
-			IsSystem:  false,
-			Channel:   m.currentCh,
-		})
-
-		// Mark as displayed so we don't show it again when polling
-		m.displayedIDs[msgID] = true
-
-		// Send to chat store
+		// Send to chat store FIRST (before local echo)
+		// This ensures the message is persisted before we display it
 		store := m.chat.Store()
 		if store != nil {
-			err := store.AppendChannelMsg(m.currentCh, &types.ChannelMessage{
+			// Generate message ID
+			msgID := m.chat.GenerateMessageID()
+			now := time.Now()
+
+			msg := &types.ChannelMessage{
 				ID:        msgID,
 				Type:      types.ChannelMsgMessage,
 				From:      username,
 				Content:   input,
-				Timestamp: time.Now(),
-			})
+				Timestamp: now,
+			}
+
+			err := store.AppendChannelMsg(m.currentCh, msg)
 			if err != nil {
 				m.debugLog("failed to append message", "error", err.Error())
 				m.addSystemLine(fmt.Sprintf("Failed to send message: %s", err.Error()))
-			} else {
-				m.debugLog("message sent", "id", msgID, "channel", m.currentCh)
+				return m, nil
 			}
+
+			m.debugLog("message sent", "id", msgID, "channel", m.currentCh)
+
+			// NOW add local echo AFTER successful write
+			// This ensures consistency between storage and display
+			m.addLine(ChatLine{
+				Timestamp: now,
+				Sender:    username,
+				Content:   input,
+				IsSystem:  false,
+				Channel:   m.currentCh,
+			})
+
+			// Mark as displayed so we don't show it again when polling
+			m.displayedIDs[msgID] = true
 		}
 	} else {
 		m.addSystemLine("Not in any channel. Use /join #channel to join one.")
@@ -475,23 +490,37 @@ func (m *Messages) joinChannel(channel string) {
 	m.addSystemLine(fmt.Sprintf("Joined %s", channel))
 	m.debugLog("joined channel", "channel", channel)
 
-	// Load recent history and mark all as displayed
-	// so we only see new messages from now on
+	// Load and display recent history
+	// Show recent messages (e.g., last 10) so users have context
 	if m.chat != nil {
 		store := m.chat.Store()
 		if store != nil {
 			opts := types.ReadOptions{
-				Limit: 50,
+				Limit: 10,
 				Types: []string{"msg"},
 			}
 			msgs, err := store.ReadChannelMsgs(channel, opts)
-			if err == nil {
+			if err == nil && len(msgs) > 0 {
+				m.addSystemLine(fmt.Sprintf("--- Recent messages (%d) ---", len(msgs)))
+				username := ""
+				if m.user != nil {
+					username = m.user.Username()
+				}
 				for _, msg := range msgs {
+					// Display the message
+					m.addLine(ChatLine{
+						Timestamp: msg.Timestamp,
+						Sender:    msg.From,
+						Content:   msg.Content,
+						IsSystem:  false,
+						Channel:   channel,
+					})
+					// Mark as displayed so we don't show it again
 					if msg.ID != "" {
 						m.displayedIDs[msg.ID] = true
 					}
 				}
-				m.debugLog("marked existing messages as displayed", "channel", channel, "count", len(msgs))
+				m.debugLog("loaded and displayed recent messages", "channel", channel, "count", len(msgs))
 			}
 		}
 	}
