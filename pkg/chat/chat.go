@@ -107,6 +107,10 @@ func (c *Chat) rebuildChannels() error {
 		return err
 	}
 
+	// Lock while rebuilding to prevent concurrent access during initialization
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	for _, name := range channels {
 		ch, err := c.store.RebuildChannelState(name)
 		if err != nil {

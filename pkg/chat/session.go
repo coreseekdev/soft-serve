@@ -121,7 +121,7 @@ func (s *ChatSession) ReadLine() (string, error) {
 	return s.term.ReadLine()
 }
 
-// Close closes the session.
+// Close closes the session and cleans up resources.
 func (s *ChatSession) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -130,6 +130,9 @@ func (s *ChatSession) Close() error {
 	}
 	s.closed = true
 	close(s.done)
+	// Close message channels to prevent goroutine leaks
+	close(s.msgs)
+	close(s.notify)
 	return s.term.Close()
 }
 

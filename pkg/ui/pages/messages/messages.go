@@ -502,10 +502,6 @@ func (m *Messages) joinChannel(channel string) {
 			msgs, err := store.ReadChannelMsgs(channel, opts)
 			if err == nil && len(msgs) > 0 {
 				m.addSystemLine(fmt.Sprintf("--- Recent messages (%d) ---", len(msgs)))
-				username := ""
-				if m.user != nil {
-					username = m.user.Username()
-				}
 				for _, msg := range msgs {
 					// Display the message
 					m.addLine(ChatLine{

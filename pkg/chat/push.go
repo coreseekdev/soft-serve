@@ -119,13 +119,35 @@ func (p *PushManager) PushMentionNotification(channel, msgID, from, content stri
 }
 
 func (p *PushManager) pushNotifToSession(sess *ChatSession, notif Notification) {
-	sess.PushNotification(notif)
+	// Check if session is done before pushing
+	select {
+	case <-sess.Done():
+		// Session is closed, don't push
+		return
+	default:
+		// Session is still active, proceed
+		sess.PushNotification(notif)
+	}
 }
 
 func (p *PushManager) pushToSession(sess *ChatSession, msg *ChannelMessage) {
+	// Check if session is done before pushing
+	select {
+	case <-sess.Done():
+		// Session is closed, don't push
+		return
+	default:
+	}
+
 	for i := 0; i < p.retryCnt; i++ {
 		if err := sess.PushChannelMessage(msg); err != nil {
 			log.Printf("push message to session %s failed (attempt %d): %v", sess.ID(), i+1, err)
+			// Check again if session closed during retry
+			select {
+			case <-sess.Done():
+				return
+			default:
+			}
 			continue
 		}
 		return
@@ -134,9 +156,23 @@ func (p *PushManager) pushToSession(sess *ChatSession, msg *ChannelMessage) {
 }
 
 func (p *PushManager) pushUserMsgToSession(sess *ChatSession, msg *UserMessage) {
+	// Check if session is done before pushing
+	select {
+	case <-sess.Done():
+		// Session is closed, don't push
+		return
+	default:
+	}
+
 	for i := 0; i < p.retryCnt; i++ {
 		if err := sess.PushUserMessage(msg); err != nil {
 			log.Printf("push user message to session %s failed (attempt %d): %v", sess.ID(), i+1, err)
+			// Check again if session closed during retry
+			select {
+			case <-sess.Done():
+				return
+			default:
+			}
 			continue
 		}
 		return

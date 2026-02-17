@@ -121,9 +121,8 @@ func SanitizeMessage(content string) string {
 		// Keep printable characters and common whitespace
 		if unicode.IsPrint(r) || r == '\n' || r == '\r' || r == '\t' {
 			result.WriteRune(r)
-		}
-		// Replace other control characters with space
-		else if unicode.IsControl(r) {
+		} else if unicode.IsControl(r) {
+			// Replace other control characters with space
 			result.WriteRune(' ')
 		}
 	}
