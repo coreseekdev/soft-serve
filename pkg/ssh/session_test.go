@@ -77,7 +77,7 @@ func setup(tb testing.TB) (*gossh.Session, func() error) {
 	ctx = store.WithContext(ctx, dbstore)
 	be := backend.New(ctx, cfg, dbx, dbstore)
 	return testsession.New(tb, &ssh.Server{
-		Handler: ContextMiddleware(cfg, dbx, dbstore, be, log.Default())(bm.MiddlewareWithProgramHandler(SessionHandler)(func(s ssh.Session) {
+		Handler: ContextMiddleware(cfg, dbx, dbstore, be, nil, log.Default())(bm.MiddlewareWithProgramHandler(SessionHandler)(func(s ssh.Session) {
 			_, _, active := s.Pty()
 			if !active {
 				os.Exit(1)

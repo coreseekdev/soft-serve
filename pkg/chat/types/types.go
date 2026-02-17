@@ -49,23 +49,113 @@ type UserMessage struct {
 
 // UserState represents a user's current state.
 type UserState struct {
-	Cursors map[string]string `json:"cursors"` // inbox -> cursor (channels and private chats)
+	// Subscriptions maps channel to subscription info
+	Subscriptions map[string]*Subscription `json:"subscriptions,omitempty"`
+	// Legacy field for backwards compatibility
+	Cursors map[string]string `json:"cursors,omitempty"`
 }
 
-// GetCursor returns the cursor for a specific inbox.
-func (s *UserState) GetCursor(inbox string) string {
-	if s == nil || s.Cursors == nil {
+// Subscription represents a user's subscription to a channel or DM.
+type Subscription struct {
+	SubCursor  string `json:"sub_cursor"`           // Cursor when subscribed (messages before this are historical)
+	ReadCursor string `json:"read_cursor,omitempty"` // Last read message ID
+}
+
+// GetReadCursor returns the read cursor for a specific inbox.
+func (s *UserState) GetReadCursor(inbox string) string {
+	if s == nil {
 		return ""
 	}
-	return s.Cursors[inbox]
+	// New format
+	if s.Subscriptions != nil {
+		if sub, ok := s.Subscriptions[inbox]; ok {
+			return sub.ReadCursor
+		}
+	}
+	// Legacy format
+	if s.Cursors != nil {
+		return s.Cursors[inbox]
+	}
+	return ""
 }
 
-// SetCursor sets the cursor for a specific inbox.
-func (s *UserState) SetCursor(inbox, cursor string) {
-	if s.Cursors == nil {
-		s.Cursors = make(map[string]string)
+// SetReadCursor sets the read cursor for a specific inbox.
+func (s *UserState) SetReadCursor(inbox, cursor string) {
+	if s == nil {
+		return
 	}
-	s.Cursors[inbox] = cursor
+	// Ensure subscriptions map exists
+	if s.Subscriptions == nil {
+		s.Subscriptions = make(map[string]*Subscription)
+	}
+	// Get or create subscription
+	sub, ok := s.Subscriptions[inbox]
+	if !ok {
+		sub = &Subscription{}
+		s.Subscriptions[inbox] = sub
+	}
+	sub.ReadCursor = cursor
+}
+
+// GetSubscription returns the subscription for a specific inbox.
+func (s *UserState) GetSubscription(inbox string) *Subscription {
+	if s == nil || s.Subscriptions == nil {
+		return nil
+	}
+	return s.Subscriptions[inbox]
+}
+
+// SetSubscription sets the subscription for a specific inbox.
+func (s *UserState) SetSubscription(inbox string, subCursor string) {
+	if s == nil {
+		return
+	}
+	if s.Subscriptions == nil {
+		s.Subscriptions = make(map[string]*Subscription)
+	}
+	s.Subscriptions[inbox] = &Subscription{
+		SubCursor:  subCursor,
+		ReadCursor: subCursor, // Initially, read cursor = sub cursor
+	}
+}
+
+// RemoveSubscription removes a subscription.
+func (s *UserState) RemoveSubscription(inbox string) {
+	if s == nil || s.Subscriptions == nil {
+		return
+	}
+	delete(s.Subscriptions, inbox)
+}
+
+// IsSubscribed checks if user is subscribed to an inbox.
+func (s *UserState) IsSubscribed(inbox string) bool {
+	if s == nil || s.Subscriptions == nil {
+		return false
+	}
+	_, ok := s.Subscriptions[inbox]
+	return ok
+}
+
+// GetSubscribedInboxes returns all subscribed inboxes.
+func (s *UserState) GetSubscribedInboxes() []string {
+	if s == nil || s.Subscriptions == nil {
+		return nil
+	}
+	inboxes := make([]string, 0, len(s.Subscriptions))
+	for inbox := range s.Subscriptions {
+		inboxes = append(inboxes, inbox)
+	}
+	return inboxes
+}
+
+// Legacy compatibility: GetCursor
+func (s *UserState) GetCursor(inbox string) string {
+	return s.GetReadCursor(inbox)
+}
+
+// Legacy compatibility: SetCursor
+func (s *UserState) SetCursor(inbox, cursor string) {
+	s.SetReadCursor(inbox, cursor)
 }
 
 // ChannelMessageType defines the type of channel mailbox message.

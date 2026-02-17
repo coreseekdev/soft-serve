@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -81,6 +82,7 @@ var commandHandlers = map[string]CommandHandler{
 	"mentions": handleMentions,
 	"topic":    handleTopic,
 	"channels": handleChannels,
+	"subs":     handleSubs,
 	"who":      handleWho,
 	"names":    handleNames,
 	"whois":    handleWhois,
@@ -159,8 +161,8 @@ func handleJoin(sess *ChatSession, args []string) error {
 	// Get current last message ID for cursor
 	lastID, _ := sess.chat.Store().GetLastChannelMsgID(channel)
 
-	// Subscribe user
-	user.State.SetCursor(channel, lastID)
+	// Subscribe user using new subscription model
+	user.State.SetSubscription(channel, lastID)
 
 	// Write subscription
 	subMsg := NewUserMessage(UserMsgSub)
@@ -176,7 +178,7 @@ func handleJoin(sess *ChatSession, args []string) error {
 	// Subscribe session to push
 	sess.chat.pushMgr.Subscribe(channel, sess)
 
-	return sess.WriteLine("Joined " + channel + " (" + string(rune(ch.MemberCount())) + " members)")
+	return sess.WriteLine("Joined " + channel + " (" + fmt.Sprintf("%d", ch.MemberCount()) + " members)")
 }
 
 func handleLeave(sess *ChatSession, args []string) error {
@@ -210,8 +212,8 @@ func handleLeave(sess *ChatSession, args []string) error {
 		}
 	}
 
-	// Unsubscribe user
-	delete(user.State.Cursors, channel)
+	// Unsubscribe user using new subscription model
+	user.State.RemoveSubscription(channel)
 
 	// Write unsubscription
 	unsubMsg := NewUserMessage(UserMsgUnsub)
@@ -241,7 +243,7 @@ func handleSelect(sess *ChatSession, args []string) error {
 			return sess.WriteLine("Channel not found: " + target)
 		}
 		user.SetCurrentChannel(target)
-		return sess.WriteLine("Now in " + target + " (" + string(rune(ch.MemberCount())) + " members)")
+		return sess.WriteLine("Now in " + target + " (" + fmt.Sprintf("%d", ch.MemberCount()) + " members)")
 	}
 
 	if strings.HasPrefix(target, "@") {
@@ -342,8 +344,8 @@ func handleMark(sess *ChatSession, args []string) error {
 		return sess.WriteLine("Error getting last message: " + err.Error())
 	}
 
-	// Update cursor
-	user.State.SetCursor(inbox, lastID)
+	// Update read cursor using new subscription model
+	user.State.SetReadCursor(inbox, lastID)
 
 	// Write mark message
 	markMsg := NewUserMessage(UserMsgMark)
@@ -509,11 +511,43 @@ func handleChannels(sess *ChatSession, args []string) error {
 			if topic == "" {
 				topic = "(no topic)"
 			}
-			sess.WriteLine(name + " (" + string(rune(ch.MemberCount())) + " users) - " + topic)
+			sess.WriteLine(name + " (" + fmt.Sprintf("%d", ch.MemberCount()) + " users) - " + topic)
 		}
 	}
 	if len(channels) == 0 {
 		sess.WriteLine("No channels")
+	}
+
+	return nil
+}
+
+func handleSubs(sess *ChatSession, args []string) error {
+	user := sess.User()
+
+	if user.State == nil || user.State.Subscriptions == nil {
+		return sess.WriteLine("No subscriptions")
+	}
+
+	sess.WriteLine("Your subscriptions:")
+	for inbox, sub := range user.State.Subscriptions {
+		// Count unread messages
+		var unread int
+		if strings.HasPrefix(inbox, "#") {
+			msgs, _ := sess.chat.Store().ReadChannelMsgs(inbox, ReadOptions{
+				AfterCursor: sub.ReadCursor,
+				Types:       []string{"msg"},
+				Limit:       10000,
+			})
+			unread = len(msgs)
+		}
+		if unread > 0 {
+			sess.WriteLine("  " + inbox + " (unread: " + fmt.Sprintf("%d", unread) + ")")
+		} else {
+			sess.WriteLine("  " + inbox)
+		}
+	}
+	if len(user.State.Subscriptions) == 0 {
+		sess.WriteLine("  (none)")
 	}
 
 	return nil
@@ -597,6 +631,7 @@ func handleHelp(sess *ChatSession, args []string) error {
   /mentions              Show your mentions
   /topic [#channel] [topic] View/set channel topic
   /channels              List all channels
+  /subs                  List your subscriptions
   /who [#channel]        List users in channel
   /names #channel        List users in channel
   /whois @user           Show user info

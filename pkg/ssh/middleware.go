@@ -8,6 +8,7 @@ import (
 	"charm.land/log/v2"
 	"charm.land/wish/v2"
 	"github.com/charmbracelet/soft-serve/pkg/backend"
+	"github.com/charmbracelet/soft-serve/pkg/chat"
 	"github.com/charmbracelet/soft-serve/pkg/config"
 	"github.com/charmbracelet/soft-serve/pkg/db"
 	"github.com/charmbracelet/soft-serve/pkg/proto"
@@ -73,8 +74,8 @@ func AuthenticationMiddleware(sh ssh.Handler) ssh.Handler {
 	}
 }
 
-// ContextMiddleware adds the config, backend, and logger to the session context.
-func ContextMiddleware(cfg *config.Config, dbx *db.DB, datastore store.Store, be *backend.Backend, logger *log.Logger) func(ssh.Handler) ssh.Handler {
+// ContextMiddleware adds the config, backend, chat, and logger to the session context.
+func ContextMiddleware(cfg *config.Config, dbx *db.DB, datastore store.Store, be *backend.Backend, chatInstance *chat.Chat, logger *log.Logger) func(ssh.Handler) ssh.Handler {
 	return func(sh ssh.Handler) ssh.Handler {
 		return func(s ssh.Session) {
 			ctx := s.Context()
@@ -84,6 +85,9 @@ func ContextMiddleware(cfg *config.Config, dbx *db.DB, datastore store.Store, be
 			ctx.SetValue(store.ContextKey, datastore)
 			ctx.SetValue(backend.ContextKey, be)
 			ctx.SetValue(log.ContextKey, logger.WithPrefix("ssh"))
+			if chatInstance != nil {
+				ctx.SetValue(chat.ContextKey(), chatInstance)
+			}
 			sh(s)
 		}
 	}
@@ -132,6 +136,13 @@ func CommandMiddleware(sh ssh.Handler) ssh.Handler {
 			cmd.JWTCommand(),
 			cmd.TokenCommand(),
 		)
+
+		// Add chat commands if chat is enabled
+		if cfg.Chat.Enabled {
+			rootCmd.AddCommand(
+				cmd.ChatCommand(),
+			)
+		}
 
 		if cfg.LFS.Enabled {
 			rootCmd.AddCommand(

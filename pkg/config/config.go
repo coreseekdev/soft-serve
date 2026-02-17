@@ -419,7 +419,7 @@ func DefaultConfig() *Config {
 			MirrorPull: "@every 10m",
 		},
 		Chat: ChatConfig{
-			Enabled:            false,
+			Enabled:            true,
 			DataPath:           filepath.Join("chat"),
 			DefaultHistoryDays: 7,
 			Users:              "",

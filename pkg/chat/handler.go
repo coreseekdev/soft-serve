@@ -156,18 +156,31 @@ func (c *Chat) sendChannelMessage(sess *ChatSession, channel, content string) er
 		return err
 	}
 
-	// Send mention notifications
+	// Send mention notifications (store + push to online users)
 	for _, mentioned := range mentions {
+		// Store mention notification
 		mentionMsg := NewUserMessage(UserMsgMention)
 		mentionMsg.ID = msgID
 		mentionMsg.Inbox = channel
 		mentionMsg.From = user.Name
 		mentionMsg.Content = content
 		c.Store().AppendUserMsg(mentioned, mentionMsg)
+
+		// Push mention notification if user is online
+		if onlineSess, ok := c.GetSession(mentioned); ok {
+			c.pushMgr.PushMentionNotification(channel, msgID, user.Name, content, onlineSess)
+		}
 	}
 
-	// Push to subscribers
-	c.pushMgr.Push(channel, msg)
+	// Push notification to all online subscribers
+	notif := Notification{
+		Channel: channel,
+		MsgID:   msgID,
+		From:    user.Name,
+		Mention: false, // Will be set to true for mentioned users
+		Time:    msg.Timestamp,
+	}
+	c.pushMgr.PushNotification(channel, notif)
 
 	return nil
 }

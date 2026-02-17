@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"charm.land/log/v2"
 	"github.com/charmbracelet/soft-serve/pkg/chat/types"
 )
 
@@ -18,6 +19,7 @@ type FileStore struct {
 	mu       sync.RWMutex
 	dataPath string
 	locks    *LockManager
+	logger   *log.Logger
 }
 
 // NewFileStore creates a new file-based store.
@@ -30,7 +32,15 @@ func NewFileStore(dataPath string) (*FileStore, error) {
 	return &FileStore{
 		dataPath: dataPath,
 		locks:    NewLockManager(),
+		logger:   log.Default().WithPrefix("chatfile"),
 	}, nil
+}
+
+// debugLog logs a debug message if debug mode is enabled
+func (s *FileStore) debugLog(msg string, args ...interface{}) {
+	if s.logger != nil {
+		s.logger.Debug(msg, args...)
+	}
 }
 
 // inboxPath returns the file path for an inbox.
@@ -97,6 +107,9 @@ func (s *FileStore) AppendChannelMsg(channel string, msg *types.ChannelMessage) 
 	}
 
 	_, err = f.Write(append(data, '\n'))
+	if err == nil {
+		s.debugLog("appended message to channel", "channel", channel, "id", msg.ID, "from", msg.From, "type", msg.Type)
+	}
 	return err
 }
 
@@ -110,6 +123,8 @@ func (s *FileStore) ReadChannelMsgs(channel string, opts types.ReadOptions) ([]*
 	if err != nil {
 		return nil, err
 	}
+
+	s.debugLog("reading channel messages", "channel", channel, "total_lines", len(messages), "after_cursor", opts.AfterCursor, "limit", opts.Limit)
 
 	var result []*types.ChannelMessage
 	for _, line := range messages {
@@ -136,6 +151,7 @@ func (s *FileStore) ReadChannelMsgs(channel string, opts types.ReadOptions) ([]*
 		}
 	}
 
+	s.debugLog("read channel messages result", "channel", channel, "returned", len(result))
 	return result, nil
 }
 
@@ -383,7 +399,10 @@ func (s *FileStore) RebuildUserState(user string) (*types.UserState, error) {
 		return nil, err
 	}
 
-	state := &types.UserState{Cursors: make(map[string]string)}
+	state := &types.UserState{
+		Subscriptions: make(map[string]*types.Subscription),
+		Cursors:       make(map[string]string), // Legacy compatibility
+	}
 
 	// Find last snapshot
 	var lastSnapshot *types.UserMessage
@@ -396,9 +415,26 @@ func (s *FileStore) RebuildUserState(user string) (*types.UserState, error) {
 
 	// Apply snapshot
 	if lastSnapshot != nil && lastSnapshot.State != nil {
-		state.Cursors = make(map[string]string)
-		for k, v := range lastSnapshot.State.Cursors {
-			state.Cursors[k] = v
+		// New format: Subscriptions
+		if lastSnapshot.State.Subscriptions != nil {
+			for inbox, sub := range lastSnapshot.State.Subscriptions {
+				state.Subscriptions[inbox] = &types.Subscription{
+					SubCursor:  sub.SubCursor,
+					ReadCursor: sub.ReadCursor,
+				}
+			}
+		}
+		// Legacy format: Cursors (convert to Subscriptions)
+		if lastSnapshot.State.Cursors != nil {
+			for k, v := range lastSnapshot.State.Cursors {
+				if _, ok := state.Subscriptions[k]; !ok {
+					state.Subscriptions[k] = &types.Subscription{
+						SubCursor:  v,
+						ReadCursor: v,
+					}
+				}
+				state.Cursors[k] = v
+			}
 		}
 	}
 
@@ -417,13 +453,36 @@ func (s *FileStore) RebuildUserState(user string) (*types.UserState, error) {
 		msg := msgs[i]
 		switch msg.Type {
 		case types.UserMsgSub:
-			if msg.Cursor != "" {
-				state.Cursors[msg.Inbox] = msg.Cursor
+			if msg.Inbox != "" {
+				cursor := msg.Cursor
+				if cursor == "" {
+					cursor = "0" // Subscribe at beginning if no cursor
+				}
+				state.Subscriptions[msg.Inbox] = &types.Subscription{
+					SubCursor:  cursor,
+					ReadCursor: cursor,
+				}
+				state.Cursors[msg.Inbox] = cursor
+				s.debugLog("applied sub event", "user", user, "inbox", msg.Inbox, "cursor", cursor)
 			}
 		case types.UserMsgMark:
-			state.Cursors[msg.Inbox] = msg.Cursor
+			if msg.Inbox != "" && msg.Cursor != "" {
+				if sub, ok := state.Subscriptions[msg.Inbox]; ok {
+					sub.ReadCursor = msg.Cursor
+				} else {
+					// Auto-subscribe if marking without explicit sub
+					state.Subscriptions[msg.Inbox] = &types.Subscription{
+						SubCursor:  msg.Cursor,
+						ReadCursor: msg.Cursor,
+					}
+				}
+				state.Cursors[msg.Inbox] = msg.Cursor
+				s.debugLog("applied mark event", "user", user, "inbox", msg.Inbox, "cursor", msg.Cursor)
+			}
 		case types.UserMsgUnsub:
+			delete(state.Subscriptions, msg.Inbox)
 			delete(state.Cursors, msg.Inbox)
+			s.debugLog("applied unsub event", "user", user, "inbox", msg.Inbox)
 		}
 	}
 

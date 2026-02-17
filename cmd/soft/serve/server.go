@@ -71,6 +71,18 @@ func NewServer(ctx context.Context) (*Server, error) {
 
 	srv.Cron = sched
 
+	// Initialize chat module if enabled (before SSH server so context is available)
+	if cfg.Chat.Enabled {
+		srv.Chat, err = chat.New(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("create chat: %w", err)
+		}
+		// Add chat to context so SSH server can access it
+		ctx = chat.WithContext(ctx, srv.Chat)
+		srv.ctx = ctx
+		logger.Info("Chat system initialized", "data_path", cfg.Chat.DataPath)
+	}
+
 	srv.SSHServer, err = sshsrv.NewSSHServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create ssh server: %w", err)
@@ -100,15 +112,6 @@ func NewServer(ctx context.Context) (*Server, error) {
 		srv.HTTPServer.SetTLSConfig(&tls.Config{
 			GetCertificate: srv.CertLoader.GetCertificateFunc(),
 		})
-	}
-
-	// Initialize chat module if enabled
-	if cfg.Chat.Enabled {
-		srv.Chat, err = chat.New(cfg)
-		if err != nil {
-			return nil, fmt.Errorf("create chat: %w", err)
-		}
-		logger.Info("Chat system initialized", "data_path", cfg.Chat.DataPath)
 	}
 
 	return srv, nil

@@ -14,6 +14,7 @@ import (
 	rm "charm.land/wish/v2/recover"
 	"github.com/charmbracelet/keygen"
 	"github.com/charmbracelet/soft-serve/pkg/backend"
+	"github.com/charmbracelet/soft-serve/pkg/chat"
 	"github.com/charmbracelet/soft-serve/pkg/config"
 	"github.com/charmbracelet/soft-serve/pkg/db"
 	"github.com/charmbracelet/soft-serve/pkg/store"
@@ -55,6 +56,7 @@ func NewSSHServer(ctx context.Context) (*SSHServer, error) {
 	dbx := db.FromContext(ctx)
 	datastore := store.FromContext(ctx)
 	be := backend.FromContext(ctx)
+	chatInstance := chat.FromContext(ctx)
 
 	var err error
 	s := &SSHServer{
@@ -80,7 +82,7 @@ func NewSSHServer(ctx context.Context) (*SSHServer, error) {
 			AuthenticationMiddleware,
 			// Context middleware.
 			// This must come first to set up the context.
-			ContextMiddleware(cfg, dbx, datastore, be, logger),
+			ContextMiddleware(cfg, dbx, datastore, be, chatInstance, logger),
 		),
 	}
 

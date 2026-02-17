@@ -17,6 +17,12 @@ type contextKey struct{}
 // chatContextKey is the context key for the chat instance.
 var chatContextKey = contextKey{}
 
+// ContextKey returns the context key for the chat instance.
+// This is useful for setting the chat in SSH session contexts.
+func ContextKey() interface{} {
+	return chatContextKey
+}
+
 // WithContext returns a new context with the chat instance attached.
 func WithContext(ctx context.Context, c *Chat) context.Context {
 	return context.WithValue(ctx, chatContextKey, c)
@@ -230,10 +236,22 @@ func (c *Chat) AddSession(sess *ChatSession) {
 	c.sessions[sess.ID()] = sess
 	c.users[sess.user.Name] = sess.user
 
-	// Associate session with subscribed channels
-	for inbox := range sess.user.State.Cursors {
-		if strings.HasPrefix(inbox, "#") {
-			c.pushMgr.Subscribe(inbox, sess)
+	// Associate session with subscribed channels using new Subscriptions map
+	if sess.user.State != nil && sess.user.State.Subscriptions != nil {
+		for inbox := range sess.user.State.Subscriptions {
+			if strings.HasPrefix(inbox, "#") {
+				c.pushMgr.Subscribe(inbox, sess)
+			}
+		}
+	}
+	// Fallback to legacy Cursors for backwards compatibility
+	if sess.user.State != nil && sess.user.State.Cursors != nil {
+		for inbox := range sess.user.State.Cursors {
+			if strings.HasPrefix(inbox, "#") {
+				if sess.user.State.Subscriptions == nil {
+					c.pushMgr.Subscribe(inbox, sess)
+				}
+			}
 		}
 	}
 }
