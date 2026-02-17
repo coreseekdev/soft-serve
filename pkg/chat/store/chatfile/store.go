@@ -114,17 +114,28 @@ func (s *FileStore) AppendChannelMsg(channel string, msg *types.ChannelMessage) 
 }
 
 // ReadChannelMsgs reads messages from a channel.
+// Returns the most recent messages first, limited by opts.Limit.
 func (s *FileStore) ReadChannelMsgs(channel string, opts types.ReadOptions) ([]*types.ChannelMessage, error) {
 	s.locks.RLock(channel)
 	defer s.locks.RUnlock(channel)
 
 	path := s.inboxPath(channel)
-	messages, err := readFileLines(path)
+	// Read messages in reverse order (newest first) to improve performance
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 100 // Default limit
+	}
+	// Read more messages than needed to account for filtering
+	readLimit := limit * 2
+	if readLimit > 10000 {
+		readLimit = 10000
+	}
+	messages, err := readFileLinesReverse(path, readLimit)
 	if err != nil {
 		return nil, err
 	}
 
-	s.debugLog("reading channel messages", "channel", channel, "total_lines", len(messages), "after_cursor", opts.AfterCursor, "limit", opts.Limit)
+	s.debugLog("reading channel messages", "channel", channel, "total_lines", len(messages), "after_cursor", opts.AfterCursor, "limit", limit)
 
 	var result []*types.ChannelMessage
 	for _, line := range messages {
@@ -149,6 +160,11 @@ func (s *FileStore) ReadChannelMsgs(channel string, opts types.ReadOptions) ([]*
 		if opts.Limit > 0 && len(result) >= opts.Limit {
 			break
 		}
+	}
+
+	// Reverse back to chronological order (oldest first)
+	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
+		result[i], result[j] = result[j], result[i]
 	}
 
 	s.debugLog("read channel messages result", "channel", channel, "returned", len(result))
